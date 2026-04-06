@@ -1,0 +1,20 @@
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+# Logs and temp
+*.log
+tmp/
+temp/
+
+# Env / local overrides
+.env
+.env.*
+*.local
+
+# OS / misc
+.DS_Store
