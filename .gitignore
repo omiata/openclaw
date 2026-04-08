@@ -18,3 +18,6 @@ temp/
 
 # OS / misc
 .DS_Store
+
+# Bitacora data files (generated entries)
+skills/bitacora/data/*.md

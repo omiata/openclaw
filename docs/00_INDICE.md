@@ -22,6 +22,7 @@ C:\omi\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro dentro del 
 5. [06_CAPACIDADES_Y_SKILLS.md](/C:/omi/openclaw/docs/06_CAPACIDADES_Y_SKILLS.md)
 6. [07_BITACORA.md](/C:/omi/openclaw/docs/07_BITACORA.md)
 7. [08_GIT_Y_GITHUB.md](/C:/omi/openclaw/docs/08_GIT_Y_GITHUB.md)
+8. [09_MIGRACION_A_WSL.md](/C:/omi/openclaw/docs/09_MIGRACION_A_WSL.md)
 
 ## Documentos principales
 
@@ -37,6 +38,7 @@ C:\omi\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro dentro del 
 - [05_TELEGRAM.md](/C:/omi/openclaw/docs/05_TELEGRAM.md)
 - [06_CAPACIDADES_Y_SKILLS.md](/C:/omi/openclaw/docs/06_CAPACIDADES_Y_SKILLS.md)
 - [08_GIT_Y_GITHUB.md](/C:/omi/openclaw/docs/08_GIT_Y_GITHUB.md)
+- [09_MIGRACION_A_WSL.md](/C:/omi/openclaw/docs/09_MIGRACION_A_WSL.md)
 
 ### Registro
 

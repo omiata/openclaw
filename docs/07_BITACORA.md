@@ -32,3 +32,12 @@ C:\omi\openclaw\projects\kleinanzeigen-watcher\
 - [ ] documentar mejor Telegram
 - [ ] decidir futuras capacidades de audio
 - [ ] dejar preparado el proyecto de Kleinanzeigen cuando toque
+
+## 2026-04-08
+
+### Bloque 5. Decision de migracion a WSL
+
+- [x] Se decide volver a WSL2 como runtime principal de OpenClaw
+- [x] Windows nativo queda como instalacion anterior, no como entorno principal
+- [x] Se crea guia de migracion: `docs/09_MIGRACION_A_WSL.md`
+- [x] Se recuerda crear acceso directo: `wsl.exe -d Ubuntu --cd /mnt/c/omi/openclaw`
