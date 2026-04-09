@@ -30,3 +30,14 @@ TESTS FALLIDOS: 0
 REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se amplió el guardado para soportar fuente, tags, contenido adicional, tipo explícito y generación de título y resumen sin romper el formato histórico. La lectura sigue aceptando entradas antiguas y los listados de fases anteriores continúan pasando sus pruebas.
+
+2026-04-09 15:36:54 CEST+0200
+FECHA: 2026-04-09 15:36:54 CEST+0200
+FASE: 4. Búsqueda textual sencilla
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 21
+TESTS PASADOS: 21
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se implementó la búsqueda textual simple en título, resumen, tags y contenido adicional, indicando el campo coincidente y ofreciendo consulta completa por id. La validación autónoma confirma que guardar, listar y filtrar siguen funcionando sin regresiones.

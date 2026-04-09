@@ -67,7 +67,7 @@ python3 skills/bitacora/scripts/test_phase1.py
 python3 skills/bitacora/scripts/test_phase3.py
 ```
 
-### Lectura y listado básico (Fase 2)
+### Lectura, listado y búsqueda (Fases 2 y 4)
 
 Script disponible:
 - `scripts/read_entries.py`
@@ -76,14 +76,18 @@ Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/read_entries.py --project camper
 python3 skills/bitacora/scripts/read_entries.py --project camper --category Aislamiento
+python3 skills/bitacora/scripts/read_entries.py --project camper --search "cama plegable"
+python3 skills/bitacora/scripts/read_entries.py --project camper --entry-id entry-1712613864123
 ```
 
-Tests de Fase 2:
+Tests:
 - `scripts/test_phase2.py`
+- `scripts/test_phase4.py`
 
-Ejemplo:
+Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/test_phase2.py
+python3 skills/bitacora/scripts/test_phase4.py
 ```
 
 ## Estado actual
@@ -91,3 +95,4 @@ python3 skills/bitacora/scripts/test_phase2.py
 - Fase 1 implementada y validada.
 - Fase 2 implementada y validada.
 - Fase 3 implementada con soporte para `fuente`, `tags`, `contenido_adicional`, tipo explícito y generación de título y resumen.
+- Fase 4 implementada con búsqueda textual simple en título, resumen, tags y contenido adicional, además de consulta por `id` para ver una entrada completa.
