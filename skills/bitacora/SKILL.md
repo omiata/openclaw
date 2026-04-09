@@ -35,7 +35,7 @@ Ver `ref/bitacora_fases.md` para el plan de desarrollo por fases.
 
 ## Implementación disponible
 
-### Guardado mínimo y enriquecido (Fases 1 y 3)
+### Guardado, deduplicación y actualización explícita (Fases 1, 3 y 5)
 
 Script disponible:
 - `scripts/save_entry.py`
@@ -55,11 +55,18 @@ python3 skills/bitacora/scripts/save_entry.py \
   --tag led \
   --tag 12v \
   --additional-content "Comparar tiras LED y focos empotrables"
+
+python3 skills/bitacora/scripts/save_entry.py \
+  --project camper \
+  --update-source-url "https://example.com/guia-luces-led-camper" \
+  --tag interiores \
+  --additional-content "Revisar diferencias entre CRI y temperatura de color"
 ```
 
 Tests:
 - `scripts/test_phase1.py`
 - `scripts/test_phase3.py`
+- `scripts/test_phase5.py`
 
 Ejemplos:
 ```bash
@@ -96,3 +103,4 @@ python3 skills/bitacora/scripts/test_phase4.py
 - Fase 2 implementada y validada.
 - Fase 3 implementada con soporte para `fuente`, `tags`, `contenido_adicional`, tipo explícito y generación de título y resumen.
 - Fase 4 implementada con búsqueda textual simple en título, resumen, tags y contenido adicional, además de consulta por `id` para ver una entrada completa.
+- Fase 5 implementada con detección de duplicados por URL exacta, bloqueo de append duplicado, actualización explícita sin cambiar `id` ni `fecha`, y avisos más claros ante categorías ambiguas.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import re
 import sys
 from dataclasses import dataclass, field
@@ -50,6 +51,7 @@ class ListingResult:
     warnings: list[ParseWarning]
     requested_category: Optional[str] = None
     normalized_category: Optional[str] = None
+    suggested_categories: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -263,6 +265,13 @@ def find_entry_matches(entry: StoredEntry, query: str) -> list[SearchMatch]:
     return matches
 
 
+def suggest_categories(entries: list[StoredEntry], category: str, limit: int = 3) -> list[str]:
+    available = sorted({entry.categoria for entry in entries})
+    normalized_map = {normalize_name(candidate): candidate for candidate in available}
+    matches = difflib.get_close_matches(normalize_name(category), list(normalized_map.keys()), n=limit, cutoff=0.6)
+    return [normalized_map[match] for match in matches]
+
+
 def list_entries(
     project: str,
     data_dir: Path = DEFAULT_DATA_DIR,
@@ -279,6 +288,7 @@ def list_entries(
         )
 
     normalized_category, matched_entries = filter_entries_by_category(entries, category)
+    suggestions = suggest_categories(entries, category) if not matched_entries else []
     return ListingResult(
         project=normalize_name(project),
         file_path=file_path,
@@ -287,6 +297,7 @@ def list_entries(
         warnings=warnings,
         requested_category=category,
         normalized_category=normalized_category,
+        suggested_categories=suggestions,
     )
 
 
@@ -399,6 +410,11 @@ def build_output(result: ListingResult, max_entries: int = 20) -> str:
             lines.append(format_entry_summary(entry))
     else:
         lines.append("No hay entradas para mostrar.")
+        if result.requested_category is not None and result.suggested_categories:
+            lines.append(
+                "Aviso de categoría ambigua o no encontrada. "
+                f"Quizá quisiste decir: {', '.join(result.suggested_categories)}."
+            )
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")

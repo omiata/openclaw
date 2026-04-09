@@ -41,3 +41,14 @@ TESTS FALLIDOS: 0
 REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se implementó la búsqueda textual simple en título, resumen, tags y contenido adicional, indicando el campo coincidente y ofreciendo consulta completa por id. La validación autónoma confirma que guardar, listar y filtrar siguen funcionando sin regresiones.
+
+2026-04-09 15:52:07 CEST+0200
+FECHA: 2026-04-09 15:52:07 CEST+0200
+FASE: 5. Duplicados básicos y pulido
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 30
+TESTS PASADOS: 30
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se añadió detección de duplicados por URL exacta, bloqueo del append duplicado y actualización explícita segura de entradas existentes mediante reescritura atómica. También se mejoraron los mensajes de guardado, duplicado y categorías ambiguas, validando además la regresión completa de las Fases 1 a 4.
