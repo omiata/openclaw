@@ -74,7 +74,7 @@ python3 skills/bitacora/scripts/test_phase1.py
 python3 skills/bitacora/scripts/test_phase3.py
 ```
 
-### Lectura, listado y búsqueda (Fases 2 y 4)
+### Lectura, listado, búsqueda e índices derivados (Fases 2, 4 y 6)
 
 Script disponible:
 - `scripts/read_entries.py`
@@ -85,16 +85,20 @@ python3 skills/bitacora/scripts/read_entries.py --project camper
 python3 skills/bitacora/scripts/read_entries.py --project camper --category Aislamiento
 python3 skills/bitacora/scripts/read_entries.py --project camper --search "cama plegable"
 python3 skills/bitacora/scripts/read_entries.py --project camper --entry-id entry-1712613864123
+python3 skills/bitacora/scripts/read_entries.py --project camper --overview
+python3 skills/bitacora/scripts/read_entries.py --global-stats
 ```
 
 Tests:
 - `scripts/test_phase2.py`
 - `scripts/test_phase4.py`
+- `scripts/test_phase6.py`
 
 Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/test_phase2.py
 python3 skills/bitacora/scripts/test_phase4.py
+python3 skills/bitacora/scripts/test_phase6.py
 ```
 
 ## Estado actual
@@ -104,3 +108,4 @@ python3 skills/bitacora/scripts/test_phase4.py
 - Fase 3 implementada con soporte para `fuente`, `tags`, `contenido_adicional`, tipo explícito y generación de título y resumen.
 - Fase 4 implementada con búsqueda textual simple en título, resumen, tags y contenido adicional, además de consulta por `id` para ver una entrada completa.
 - Fase 5 implementada con detección de duplicados por URL exacta, bloqueo de append duplicado, actualización explícita sin cambiar `id` ni `fecha`, y avisos más claros ante categorías ambiguas.
+- Fase 6 implementada con `--overview` por proyecto, índices dinámicos de categorías y tipos, y `--global-stats` agregadas, siempre derivadas del listado maestro de entradas.

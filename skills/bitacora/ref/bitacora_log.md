@@ -52,3 +52,14 @@ TESTS FALLIDOS: 0
 REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se añadió detección de duplicados por URL exacta, bloqueo del append duplicado y actualización explícita segura de entradas existentes mediante reescritura atómica. También se mejoraron los mensajes de guardado, duplicado y categorías ambiguas, validando además la regresión completa de las Fases 1 a 4.
+2026-04-09 16:00:36 CEST+0200
+FECHA: 2026-04-09 16:00:36 CEST+0200
+FASE: 6. Índices y mejoras secundarias (opcional)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 34
+TESTS PASADOS: 34
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: SÍ
+DESCRIPCIÓN: Se añadieron índices y estadísticas derivadas para navegación, tanto por proyecto como a nivel global, sin convertirlas en fuente de verdad ni tocar el formato histórico de las entradas. La validación autónoma confirma que guardar, listar, filtrar, buscar y deduplicar siguen funcionando tras la mejora.
+

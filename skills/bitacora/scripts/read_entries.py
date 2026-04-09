@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import difflib
 import re
 import sys
@@ -74,6 +75,55 @@ class SearchResult:
     query: str
     matched_hits: list[SearchHit]
     warnings: list[ParseWarning]
+
+
+@dataclass
+class CategoryIndexItem:
+    categoria: str
+    total_entries: int
+    latest_update: Optional[str]
+
+
+@dataclass
+class TypeIndexItem:
+    tipo: str
+    total_entries: int
+
+
+@dataclass
+class ProjectOverviewResult:
+    project: str
+    file_path: Path
+    total_entries: int
+    category_index: list[CategoryIndexItem]
+    type_index: list[TypeIndexItem]
+    latest_update: Optional[str]
+    warnings: list[ParseWarning]
+
+
+@dataclass
+class GlobalProjectSummary:
+    project: str
+    total_entries: int
+    category_count: int
+    type_count: int
+    latest_update: Optional[str]
+
+
+@dataclass
+class GlobalWarningGroup:
+    project: str
+    warnings: list[ParseWarning]
+
+
+@dataclass
+class GlobalStatsResult:
+    total_entries: int
+    total_projects: int
+    projects: list[GlobalProjectSummary]
+    top_categories: list[CategoryIndexItem]
+    type_index: list[TypeIndexItem]
+    warning_groups: list[GlobalWarningGroup]
 
 
 @dataclass
@@ -200,14 +250,97 @@ def load_entries(project: str, data_dir: Path = DEFAULT_DATA_DIR) -> tuple[list[
     return sort_entries(entries), warnings, file_path
 
 
-def sort_entries(entries: list[StoredEntry]) -> list[StoredEntry]:
-    def key(entry: StoredEntry) -> datetime:
-        try:
-            return datetime.fromisoformat(entry.fecha.replace("Z", "+00:00"))
-        except ValueError:
-            return datetime.min.replace(tzinfo=timezone.utc)
+def parse_entry_datetime(fecha: str) -> datetime:
+    try:
+        return datetime.fromisoformat(fecha.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
 
-    return sorted(entries, key=key, reverse=True)
+
+def sort_entries(entries: list[StoredEntry]) -> list[StoredEntry]:
+    return sorted(entries, key=lambda entry: parse_entry_datetime(entry.fecha), reverse=True)
+
+
+def build_category_index(entries: list[StoredEntry]) -> list[CategoryIndexItem]:
+    counters: Counter[str] = Counter()
+    latest_by_category: dict[str, str] = {}
+
+    for entry in entries:
+        counters[entry.categoria] += 1
+        if entry.categoria not in latest_by_category:
+            latest_by_category[entry.categoria] = entry.fecha
+
+    return sorted(
+        [
+            CategoryIndexItem(
+                categoria=category,
+                total_entries=total,
+                latest_update=latest_by_category.get(category),
+            )
+            for category, total in counters.items()
+        ],
+        key=lambda item: (-item.total_entries, item.categoria),
+    )
+
+
+def build_type_index(entries: list[StoredEntry]) -> list[TypeIndexItem]:
+    counters: Counter[str] = Counter(entry.tipo for entry in entries)
+    return sorted(
+        [TypeIndexItem(tipo=resource_type, total_entries=total) for resource_type, total in counters.items()],
+        key=lambda item: (-item.total_entries, item.tipo),
+    )
+
+
+def build_project_overview(project: str, data_dir: Path = DEFAULT_DATA_DIR) -> ProjectOverviewResult:
+    entries, warnings, file_path = load_entries(project=project, data_dir=data_dir)
+    category_index = build_category_index(entries)
+    type_index = build_type_index(entries)
+    latest_update = entries[0].fecha if entries else None
+    return ProjectOverviewResult(
+        project=normalize_name(project),
+        file_path=file_path,
+        total_entries=len(entries),
+        category_index=category_index,
+        type_index=type_index,
+        latest_update=latest_update,
+        warnings=warnings,
+    )
+
+
+def build_global_stats(data_dir: Path = DEFAULT_DATA_DIR) -> GlobalStatsResult:
+    project_files = sorted(path for path in data_dir.glob("*.md") if path.is_file())
+    project_summaries: list[GlobalProjectSummary] = []
+    warning_groups: list[GlobalWarningGroup] = []
+    all_entries: list[StoredEntry] = []
+
+    for file_path in project_files:
+        project = file_path.stem
+        entries, warnings, _ = load_entries(project=project, data_dir=data_dir)
+        all_entries.extend(entries)
+        category_index = build_category_index(entries)
+        type_index = build_type_index(entries)
+        latest_update = entries[0].fecha if entries else None
+        project_summaries.append(
+            GlobalProjectSummary(
+                project=project,
+                total_entries=len(entries),
+                category_count=len(category_index),
+                type_count=len(type_index),
+                latest_update=latest_update,
+            )
+        )
+        if warnings:
+            warning_groups.append(GlobalWarningGroup(project=project, warnings=warnings))
+
+    project_summaries.sort(key=lambda item: (-item.total_entries, item.project))
+    return GlobalStatsResult(
+        total_entries=len(all_entries),
+        total_projects=len(project_summaries),
+        projects=project_summaries,
+        top_categories=build_category_index(all_entries),
+        type_index=build_type_index(all_entries),
+        warning_groups=warning_groups,
+    )
 
 
 def filter_entries_by_category(entries: list[StoredEntry], category: str) -> tuple[str, list[StoredEntry]]:
@@ -391,7 +524,83 @@ def format_warning(warning: ParseWarning) -> str:
     return f"- {location}: {warning.message}"
 
 
-def build_output(result: ListingResult, max_entries: int = 20) -> str:
+def build_overview_sections(overview: ProjectOverviewResult) -> list[str]:
+    lines: list[str] = []
+
+    lines.append("Índice de categorías:")
+    if overview.category_index:
+        for item in overview.category_index:
+            latest = item.latest_update or "sin fecha válida"
+            lines.append(
+                f"- {item.categoria}: {item.total_entries} entradas | última actualización: {latest}"
+            )
+    else:
+        lines.append("- Sin entradas válidas para indexar categorías.")
+
+    lines.append("Índice de tipos:")
+    if overview.type_index:
+        for item in overview.type_index:
+            lines.append(f"- {item.tipo}: {item.total_entries} entradas")
+    else:
+        lines.append("- Sin entradas válidas para indexar tipos.")
+
+    lines.append("Estadísticas:")
+    lines.append(f"- total entradas: {overview.total_entries}")
+    lines.append(f"- categorías distintas: {len(overview.category_index)}")
+    lines.append(f"- tipos presentes: {len(overview.type_index)}")
+    lines.append(f"- última actualización: {overview.latest_update or 'sin fecha válida'}")
+    if overview.category_index:
+        top_categories = ", ".join(
+            f"{item.categoria} ({item.total_entries})" for item in overview.category_index[:5]
+        )
+        lines.append(f"- categorías más usadas: {top_categories}")
+    else:
+        lines.append("- categorías más usadas: ninguna")
+
+    return lines
+
+
+def build_global_stats_output(result: GlobalStatsResult) -> str:
+    lines = [
+        f"Estadísticas globales: {result.total_entries} entradas válidas en {result.total_projects} proyectos."
+    ]
+
+    if result.projects:
+        for project in result.projects:
+            latest = project.latest_update or "sin fecha válida"
+            lines.append(
+                f"- {project.project}: {project.total_entries} entradas | "
+                f"{project.category_count} categorías | {project.type_count} tipos | "
+                f"última actualización: {latest}"
+            )
+    else:
+        lines.append("No hay proyectos para mostrar.")
+
+    lines.append("Categorías más usadas:")
+    if result.top_categories:
+        for item in result.top_categories[:10]:
+            lines.append(f"- {item.categoria}: {item.total_entries} entradas")
+    else:
+        lines.append("- Sin categorías válidas.")
+
+    lines.append("Tipos presentes:")
+    if result.type_index:
+        for item in result.type_index:
+            lines.append(f"- {item.tipo}: {item.total_entries} entradas")
+    else:
+        lines.append("- Sin tipos válidos.")
+
+    if result.warning_groups:
+        total_warnings = sum(len(group.warnings) for group in result.warning_groups)
+        lines.append(f"Avisos de lectura globales: {total_warnings}")
+        for group in result.warning_groups:
+            for warning in group.warnings:
+                lines.append(f"- {group.project} / {format_warning(warning)[2:]}")
+
+    return "\n".join(lines)
+
+
+def build_output(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
     if result.requested_category is None:
         header = f"Proyecto {result.project}: {result.total_entries} entradas válidas."
     else:
@@ -419,6 +628,9 @@ def build_output(result: ListingResult, max_entries: int = 20) -> str:
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
         lines.extend(format_warning(warning) for warning in result.warnings)
+
+    if overview is not None:
+        lines.extend(build_overview_sections(overview))
 
     return "\n".join(lines)
 
@@ -464,10 +676,12 @@ def build_entry_output(result: EntryLookupResult) -> str:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Leer, listar y buscar entradas de bitácora")
-    parser.add_argument("--project", required=True, help="Nombre del proyecto")
+    parser.add_argument("--project", help="Nombre del proyecto")
     parser.add_argument("--category", help="Categoría exacta o variación menor")
     parser.add_argument("--search", help="Texto a buscar en título, resumen, tags y contenido adicional")
     parser.add_argument("--entry-id", help="Mostrar una entrada concreta por id")
+    parser.add_argument("--overview", action="store_true", help="Mostrar índices y estadísticas derivadas del proyecto")
+    parser.add_argument("--global-stats", action="store_true", help="Mostrar estadísticas agregadas de todos los proyectos")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
     args = parser.parse_args(argv)
@@ -475,12 +689,25 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         parser.error("--category y --search no pueden usarse a la vez")
     if args.entry_id and (args.category or args.search):
         parser.error("--entry-id no puede combinarse con --category ni --search")
+    if args.global_stats and args.project:
+        parser.error("--global-stats no puede combinarse con --project")
+    if args.global_stats and (args.category or args.search or args.entry_id or args.overview):
+        parser.error("--global-stats no puede combinarse con filtros ni con --overview")
+    if args.overview and (args.category or args.search or args.entry_id):
+        parser.error("--overview no puede combinarse con --category, --search ni --entry-id")
+    if not args.global_stats and not args.project:
+        parser.error("--project es obligatorio salvo con --global-stats")
     return args
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     try:
+        if args.global_stats:
+            result = build_global_stats(data_dir=Path(args.data_dir))
+            print(build_global_stats_output(result))
+            return 0
+
         if args.entry_id:
             result = get_entry_by_id(
                 project=args.project,
@@ -504,11 +731,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             data_dir=Path(args.data_dir),
             category=args.category,
         )
+        overview = build_project_overview(args.project, Path(args.data_dir)) if args.overview else None
     except Exception as exc:  # pragma: no cover
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(build_output(result, max_entries=max(args.max_entries, 1)))
+    print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview))
     return 0
 
 
