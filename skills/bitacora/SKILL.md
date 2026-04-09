@@ -32,3 +32,45 @@ Ejemplos: `camper`, `balcon`, `poesia`, `bicicleta`
 ## Estado de implementación
 
 Ver `ref/bitacora_fases.md` para el plan de desarrollo por fases.
+
+## Implementación disponible
+
+### Guardado mínimo (Fase 1)
+
+Script disponible:
+- `scripts/save_entry.py`
+
+Ejemplo:
+```bash
+python3 skills/bitacora/scripts/save_entry.py \
+  --project camper \
+  --category aislamiento \
+  --content "Panel XPS para suelo y paredes"
+```
+
+Tests de Fase 1:
+- `scripts/test_phase1.py`
+
+Ejemplo:
+```bash
+python3 skills/bitacora/scripts/test_phase1.py
+```
+
+### Lectura y listado básico (Fase 2)
+
+Script disponible:
+- `scripts/read_entries.py`
+
+Ejemplos:
+```bash
+python3 skills/bitacora/scripts/read_entries.py --project camper
+python3 skills/bitacora/scripts/read_entries.py --project camper --category Aislamiento
+```
+
+Tests de Fase 2:
+- `scripts/test_phase2.py`
+
+Ejemplo:
+```bash
+python3 skills/bitacora/scripts/test_phase2.py
+```
