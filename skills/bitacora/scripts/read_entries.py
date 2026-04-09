@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -35,6 +35,9 @@ class StoredEntry:
     contenido: str
     source_path: Path
     position: int
+    fuente: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    contenido_adicional: Optional[str] = None
 
 
 @dataclass
@@ -84,6 +87,24 @@ def extract_frontmatter(block: str) -> tuple[str, str]:
     return yaml_text, body
 
 
+def parse_tags(raw_tags: object) -> list[str]:
+    if raw_tags is None:
+        return []
+    if isinstance(raw_tags, str):
+        candidate = raw_tags.strip()
+        return [candidate] if candidate else []
+    if isinstance(raw_tags, list):
+        normalized: list[str] = []
+        for item in raw_tags:
+            if item is None:
+                continue
+            candidate = str(item).strip()
+            if candidate:
+                normalized.append(candidate)
+        return normalized
+    raise ValueError("El campo tags debe ser una lista o string")
+
+
 def parse_entry_block(block: str, position: int, source_path: Path) -> StoredEntry:
     yaml_text, body = extract_frontmatter(block)
     parsed = yaml.safe_load(yaml_text)
@@ -105,6 +126,13 @@ def parse_entry_block(block: str, position: int, source_path: Path) -> StoredEnt
         contenido=body,
         source_path=source_path,
         position=position,
+        fuente=str(parsed["fuente"]).strip() if parsed.get("fuente") not in (None, "") else None,
+        tags=parse_tags(parsed.get("tags")),
+        contenido_adicional=(
+            str(parsed["contenido_adicional"]).strip()
+            if parsed.get("contenido_adicional") not in (None, "")
+            else None
+        ),
     )
 
 
@@ -181,11 +209,16 @@ def list_entries(
 
 
 def format_entry_summary(entry: StoredEntry) -> str:
-    return (
-        f"- {entry.titulo}\n"
-        f"  categoría: {entry.categoria} | tipo: {entry.tipo} | fecha: {entry.fecha}\n"
-        f"  resumen: {entry.resumen}"
-    )
+    lines = [
+        f"- {entry.titulo}",
+        f"  categoría: {entry.categoria} | tipo: {entry.tipo} | fecha: {entry.fecha}",
+        f"  resumen: {entry.resumen}",
+    ]
+    if entry.fuente:
+        lines.append(f"  fuente: {entry.fuente}")
+    if entry.tags:
+        lines.append(f"  tags: {', '.join(entry.tags)}")
+    return "\n".join(lines)
 
 
 def format_warning(warning: ParseWarning) -> str:

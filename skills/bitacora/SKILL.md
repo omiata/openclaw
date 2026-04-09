@@ -35,25 +35,36 @@ Ver `ref/bitacora_fases.md` para el plan de desarrollo por fases.
 
 ## Implementación disponible
 
-### Guardado mínimo (Fase 1)
+### Guardado mínimo y enriquecido (Fases 1 y 3)
 
 Script disponible:
 - `scripts/save_entry.py`
 
-Ejemplo:
+Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/save_entry.py \
   --project camper \
   --category aislamiento \
   --content "Panel XPS para suelo y paredes"
+
+python3 skills/bitacora/scripts/save_entry.py \
+  --project camper \
+  --category iluminacion \
+  --content "https://example.com/guia-luces-led-camper" \
+  --source "https://example.com/guia-luces-led-camper" \
+  --tag led \
+  --tag 12v \
+  --additional-content "Comparar tiras LED y focos empotrables"
 ```
 
-Tests de Fase 1:
+Tests:
 - `scripts/test_phase1.py`
+- `scripts/test_phase3.py`
 
-Ejemplo:
+Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/test_phase1.py
+python3 skills/bitacora/scripts/test_phase3.py
 ```
 
 ### Lectura y listado básico (Fase 2)
@@ -74,3 +85,9 @@ Ejemplo:
 ```bash
 python3 skills/bitacora/scripts/test_phase2.py
 ```
+
+## Estado actual
+
+- Fase 1 implementada y validada.
+- Fase 2 implementada y validada.
+- Fase 3 implementada con soporte para `fuente`, `tags`, `contenido_adicional`, tipo explícito y generación de título y resumen.
