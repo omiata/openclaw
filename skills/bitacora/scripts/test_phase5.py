@@ -74,6 +74,7 @@ def main() -> int:
                 url,
                 "--source",
                 url,
+                "--technical",
                 "--data-dir",
                 str(DATA_DIR),
             ],

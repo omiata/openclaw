@@ -85,3 +85,14 @@ REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se cerró el flujo obligatorio de captura con proyecto y categoría, se añadió metadata externa ligera con timeout duro de 3 segundos y se rehízo la lógica de resúmenes honestos con `calidad_resumen`. El bloque queda validado con tests autónomos de fases 8, 9 y 10, más regresión ejecutada sobre las fases 5, 6 y 7.
 
+2026-04-10 18:39:08 CEST+0200
+FECHA: 2026-04-10 18:39:08 CEST+0200
+FASE: Bloque 3. Fases 11 y 12 (Salida y representación humana)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 6
+TESTS PASADOS: 6
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se implementó la salida humana por defecto con modo técnico explícito, ocultando IDs, rutas y fechas ISO en confirmaciones, listados y búsquedas visibles. También se humanizaron proyectos, categorías y tipos sin alterar las claves internas, validando el bloque con `test_phase11.py`, `test_phase12.py` y regresión ejecutada sobre las fases 5, 6, 8 y 10.
+

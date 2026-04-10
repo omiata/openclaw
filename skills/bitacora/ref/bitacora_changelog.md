@@ -56,3 +56,11 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - rehecha la lógica de títulos y resúmenes para priorizar resumen del usuario, luego metadata útil, luego texto libre útil y finalmente fallback honesto
 - etiquetado consistente de `calidad_resumen` en `usuario`, `auto` y `fallback`, manteniendo `estado: nuevo` por defecto
 - materializados y ejecutados `test_phase8.py`, `test_phase9.py` y `test_phase10.py`, además de regresión satisfactoria sobre `test_phase5.py`, `test_phase6.py` y `test_phase7.py`
+
+### 2026-04-10 18:39:08 CEST+0200 - Bloque 3 completado (Fases 11 y 12)
+- añadida salida humana por defecto en `save_entry.py` y `read_entries.py`, con `--technical` como vista técnica explícita
+- limpiadas las confirmaciones visibles para ocultar rutas físicas, IDs y mensajes con tono de CLI
+- humanizadas las fechas visibles en listados, búsquedas, vistas completas y resúmenes derivados
+- ocultados los IDs en listados y búsquedas visibles, manteniendo la vista técnica detallada cuando se solicita
+- añadida humanización visible de proyectos, categorías y tipos sin modificar las claves internas almacenadas en YAML
+- materializados y ejecutados `test_phase11.py` y `test_phase12.py`, más regresión satisfactoria sobre `test_phase5.py`, `test_phase6.py`, `test_phase8.py` y `test_phase10.py`

@@ -11,7 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from save_entry import DEFAULT_DATA_DIR, ENTRY_DELIMITER, ascii_fold, entry_from_block, normalize_name
+from save_entry import (
+    DEFAULT_DATA_DIR,
+    ENTRY_DELIMITER,
+    ascii_fold,
+    entry_from_block,
+    format_visible_date,
+    humanize_category_name,
+    humanize_project_name,
+    humanize_resource_type,
+    humanize_state_label,
+    humanize_summary_quality_label,
+    normalize_name,
+)
 
 REQUIRED_FIELDS = (
     "id",
@@ -25,6 +37,12 @@ REQUIRED_FIELDS = (
     "estado",
 )
 SEARCHABLE_FIELDS = ("titulo", "resumen", "tags", "contenido_adicional")
+HUMAN_FIELD_LABELS = {
+    "titulo": "el título",
+    "resumen": "el resumen",
+    "tags": "los tags",
+    "contenido_adicional": "la nota personal",
+}
 
 
 @dataclass
@@ -460,6 +478,24 @@ def format_entry_summary(entry: StoredEntry) -> str:
     return "\n".join(lines)
 
 
+def format_entry_summary_human(entry: StoredEntry) -> str:
+    lines = [f"- {entry.titulo}"]
+    meta = " · ".join(
+        (
+            humanize_category_name(entry.categoria),
+            humanize_resource_type(entry.tipo),
+            format_visible_date(entry.fecha),
+        )
+    )
+    lines.append(f"  {meta}")
+    lines.append(f"  {entry.resumen}")
+    if entry.calidad_resumen == "fallback":
+        lines.append(f"  {humanize_summary_quality_label(entry.calidad_resumen)}")
+    if entry.tags:
+        lines.append(f"  Tags: {', '.join(entry.tags)}")
+    return "\n".join(lines)
+
+
 def format_search_hit(hit: SearchHit) -> str:
     lines = [
         f"- {hit.entry.titulo}",
@@ -468,6 +504,22 @@ def format_search_hit(hit: SearchHit) -> str:
     ]
     for match in hit.matches:
         lines.append(f"  coincidencia en {match.field_name}: {match.context}")
+    return "\n".join(lines)
+
+
+def format_search_hit_human(hit: SearchHit) -> str:
+    lines = [f"- {hit.entry.titulo}"]
+    meta = " · ".join(
+        (
+            humanize_category_name(hit.entry.categoria),
+            humanize_resource_type(hit.entry.tipo),
+            format_visible_date(hit.entry.fecha),
+        )
+    )
+    lines.append(f"  {meta}")
+    for match in hit.matches:
+        field_label = HUMAN_FIELD_LABELS.get(match.field_name, match.field_name)
+        lines.append(f"  Aparece en {field_label}: {match.context}")
     return "\n".join(lines)
 
 
@@ -483,6 +535,30 @@ def format_entry_full(entry: StoredEntry) -> str:
         f"Título: {entry.titulo}",
         f"Resumen: {entry.resumen}",
     ]
+    if entry.fuente:
+        lines.append(f"Fuente: {entry.fuente}")
+    if entry.tags:
+        lines.append(f"Tags: {', '.join(entry.tags)}")
+    if entry.contenido_adicional:
+        lines.append("Nota personal:")
+        lines.append(entry.contenido_adicional)
+    return "\n".join(lines)
+
+
+def format_entry_full_human(entry: StoredEntry) -> str:
+    lines = [entry.titulo]
+    lines.append(
+        " · ".join(
+            (
+                humanize_project_name(entry.proyecto),
+                humanize_category_name(entry.categoria),
+                humanize_resource_type(entry.tipo),
+                format_visible_date(entry.fecha),
+            )
+        )
+    )
+    lines.append(f"Estado: {humanize_state_label(entry.estado)}")
+    lines.append(f"Resumen: {entry.resumen}")
     if entry.fuente:
         lines.append(f"Fuente: {entry.fuente}")
     if entry.tags:
@@ -535,6 +611,10 @@ def build_overview_sections(overview: ProjectOverviewResult) -> list[str]:
 
 
 def build_global_stats_output(result: GlobalStatsResult) -> str:
+    return build_global_stats_output_technical(result)
+
+
+def build_global_stats_output_technical(result: GlobalStatsResult) -> str:
     lines = [
         f"Estadísticas globales: {result.total_entries} entradas válidas en {result.total_projects} proyectos."
     ]
@@ -574,7 +654,54 @@ def build_global_stats_output(result: GlobalStatsResult) -> str:
     return "\n".join(lines)
 
 
-def build_output(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
+def build_global_stats_output_human(result: GlobalStatsResult) -> str:
+    lines = [
+        f"Resumen global: {result.total_entries} entradas válidas en {result.total_projects} proyectos."
+    ]
+
+    if result.projects:
+        for project in result.projects:
+            latest = format_visible_date(project.latest_update) if project.latest_update else "sin fecha legible"
+            lines.append(
+                f"- {humanize_project_name(project.project)}: {project.total_entries} entradas, "
+                f"{project.category_count} categorías, {project.type_count} tipos, última actualización {latest}"
+            )
+    else:
+        lines.append("No hay proyectos para mostrar.")
+
+    if result.top_categories:
+        lines.append("Categorías más usadas:")
+        for item in result.top_categories[:10]:
+            lines.append(f"- {humanize_category_name(item.categoria)}: {item.total_entries}")
+
+    if result.type_index:
+        lines.append("Tipos presentes:")
+        for item in result.type_index:
+            lines.append(f"- {humanize_resource_type(item.tipo)}: {item.total_entries}")
+
+    if result.warning_groups:
+        total_warnings = sum(len(group.warnings) for group in result.warning_groups)
+        lines.append(f"Avisos de lectura: {total_warnings}")
+        for group in result.warning_groups:
+            for warning in group.warnings:
+                lines.append(f"- {humanize_project_name(group.project)} / {format_warning(warning)[2:]}")
+
+    return "\n".join(lines)
+
+
+def build_output(
+    result: ListingResult,
+    max_entries: int = 20,
+    overview: Optional[ProjectOverviewResult] = None,
+    *,
+    technical: bool = True,
+) -> str:
+    if technical:
+        return build_output_technical(result, max_entries=max_entries, overview=overview)
+    return build_output_human(result, max_entries=max_entries, overview=overview)
+
+
+def build_output_technical(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
     if result.requested_category is None:
         header = f"Proyecto {result.project}: {result.total_entries} entradas válidas."
     else:
@@ -609,7 +736,47 @@ def build_output(result: ListingResult, max_entries: int = 20, overview: Optiona
     return "\n".join(lines)
 
 
-def build_search_output(result: SearchResult, max_entries: int = 20) -> str:
+def build_output_human(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
+    project_label = humanize_project_name(result.project)
+    if result.requested_category is None:
+        header = f"{project_label}: {result.total_entries} entradas." if result.total_entries != 1 else f"{project_label}: 1 entrada."
+    else:
+        requested = humanize_category_name(result.normalized_category or normalize_name(result.requested_category))
+        total = len(result.matched_entries)
+        noun = "entrada" if total == 1 else "entradas"
+        header = f"{project_label}, {requested}: {total} {noun} de {result.total_entries}."
+
+    lines = [header]
+
+    if result.matched_entries:
+        visible_entries = result.matched_entries[:max_entries]
+        if len(result.matched_entries) > max_entries:
+            lines.append(f"Te enseño {len(visible_entries)} de {len(result.matched_entries)} entradas.")
+        for entry in visible_entries:
+            lines.append(format_entry_summary_human(entry))
+    else:
+        lines.append("No he encontrado entradas para mostrar.")
+        if result.requested_category is not None and result.suggested_categories:
+            suggestions = ", ".join(humanize_category_name(item) for item in result.suggested_categories)
+            lines.append(f"Quizá quisiste decir: {suggestions}.")
+
+    if result.warnings:
+        lines.append(f"Avisos de lectura: {len(result.warnings)}")
+        lines.extend(format_warning(warning) for warning in result.warnings)
+
+    if overview is not None:
+        lines.extend(build_overview_sections_human(overview))
+
+    return "\n".join(lines)
+
+
+def build_search_output(result: SearchResult, max_entries: int = 20, *, technical: bool = True) -> str:
+    if technical:
+        return build_search_output_technical(result, max_entries=max_entries)
+    return build_search_output_human(result, max_entries=max_entries)
+
+
+def build_search_output_technical(result: SearchResult, max_entries: int = 20) -> str:
     lines = [
         f'Proyecto {result.project}, búsqueda "{result.query}": '
         f"{len(result.matched_hits)} coincidencias en {result.total_entries} entradas válidas."
@@ -632,7 +799,36 @@ def build_search_output(result: SearchResult, max_entries: int = 20) -> str:
     return "\n".join(lines)
 
 
-def build_entry_output(result: EntryLookupResult) -> str:
+def build_search_output_human(result: SearchResult, max_entries: int = 20) -> str:
+    project_label = humanize_project_name(result.project)
+    total_hits = len(result.matched_hits)
+    noun = "coincidencia" if total_hits == 1 else "coincidencias"
+    lines = [f'{project_label}, búsqueda "{result.query}": {total_hits} {noun} en {result.total_entries} entradas.']
+
+    if result.matched_hits:
+        visible_hits = result.matched_hits[:max_entries]
+        if len(result.matched_hits) > max_entries:
+            lines.append(f"Te enseño {len(visible_hits)} de {len(result.matched_hits)} coincidencias.")
+        for hit in visible_hits:
+            lines.append(format_search_hit_human(hit))
+        lines.append("Si quieres, te muestro la entrada completa.")
+    else:
+        lines.append("No he encontrado coincidencias.")
+
+    if result.warnings:
+        lines.append(f"Avisos de lectura: {len(result.warnings)}")
+        lines.extend(format_warning(warning) for warning in result.warnings)
+
+    return "\n".join(lines)
+
+
+def build_entry_output(result: EntryLookupResult, *, technical: bool = True) -> str:
+    if technical:
+        return build_entry_output_technical(result)
+    return build_entry_output_human(result)
+
+
+def build_entry_output_technical(result: EntryLookupResult) -> str:
     if result.entry is None:
         lines = [
             f"Proyecto {result.project}: no existe la entrada {result.requested_entry_id} "
@@ -648,6 +844,52 @@ def build_entry_output(result: EntryLookupResult) -> str:
     return "\n".join(lines)
 
 
+def build_entry_output_human(result: EntryLookupResult) -> str:
+    if result.entry is None:
+        lines = [
+            f"No he encontrado esa entrada en {humanize_project_name(result.project)}."
+        ]
+    else:
+        lines = [format_entry_full_human(result.entry)]
+
+    if result.warnings:
+        lines.append(f"Avisos de lectura: {len(result.warnings)}")
+        lines.extend(format_warning(warning) for warning in result.warnings)
+
+    return "\n".join(lines)
+
+
+def build_overview_sections_human(overview: ProjectOverviewResult) -> list[str]:
+    lines: list[str] = []
+
+    lines.append("Resumen por categorías:")
+    if overview.category_index:
+        for item in overview.category_index:
+            latest = format_visible_date(item.latest_update) if item.latest_update else "sin fecha legible"
+            lines.append(
+                f"- {humanize_category_name(item.categoria)}: {item.total_entries} entradas, última actualización {latest}"
+            )
+    else:
+        lines.append("- Sin entradas válidas para agrupar.")
+
+    lines.append("Resumen por tipos:")
+    if overview.type_index:
+        for item in overview.type_index:
+            lines.append(f"- {humanize_resource_type(item.tipo)}: {item.total_entries} entradas")
+    else:
+        lines.append("- Sin tipos válidos.")
+
+    lines.append("Datos rápidos:")
+    lines.append(f"- Total entradas: {overview.total_entries}")
+    lines.append(f"- Categorías distintas: {len(overview.category_index)}")
+    lines.append(f"- Tipos presentes: {len(overview.type_index)}")
+    lines.append(
+        f"- Última actualización: {format_visible_date(overview.latest_update) if overview.latest_update else 'sin fecha legible'}"
+    )
+
+    return lines
+
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Leer, listar y buscar entradas de bitácora")
     parser.add_argument("--project", help="Nombre del proyecto")
@@ -656,6 +898,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--entry-id", help="Mostrar una entrada concreta por id")
     parser.add_argument("--overview", action="store_true", help="Mostrar índices y estadísticas derivadas del proyecto")
     parser.add_argument("--global-stats", action="store_true", help="Mostrar estadísticas agregadas de todos los proyectos")
+    parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
     args = parser.parse_args(argv)
@@ -679,7 +922,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         if args.global_stats:
             result = build_global_stats(data_dir=Path(args.data_dir))
-            print(build_global_stats_output(result))
+            output = build_global_stats_output_technical(result) if args.technical else build_global_stats_output_human(result)
+            print(output)
             return 0
 
         if args.entry_id:
@@ -688,7 +932,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 entry_id=args.entry_id,
                 data_dir=Path(args.data_dir),
             )
-            print(build_entry_output(result))
+            print(build_entry_output(result, technical=args.technical))
             return 0
 
         if args.search:
@@ -697,7 +941,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 query=args.search,
                 data_dir=Path(args.data_dir),
             )
-            print(build_search_output(result, max_entries=max(args.max_entries, 1)))
+            print(build_search_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
             return 0
 
         result = list_entries(
@@ -710,7 +954,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview))
+    print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview, technical=args.technical))
     return 0
 
 

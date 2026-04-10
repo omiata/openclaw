@@ -73,6 +73,38 @@ DEFAULT_PROJECT_CATEGORIES = {
         "ideas-generales",
     ),
 }
+HUMAN_TYPE_LABELS = {
+    "link": "enlace",
+    "video": "vídeo",
+    "documento": "documento",
+    "nota": "nota",
+    "idea": "idea",
+    "referencia": "referencia",
+}
+HUMAN_STATE_LABELS = {
+    "nuevo": "pendiente",
+    "revisado": "revisada",
+    "descartado": "descartada",
+}
+HUMAN_SUMMARY_QUALITY_LABELS = {
+    "fallback": "resumen pendiente de enriquecer",
+    "auto": "resumen automático",
+    "usuario": "resumen definido por ti",
+}
+MONTH_NAMES_SHORT_ES = (
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
+)
 
 
 @dataclass
@@ -155,6 +187,43 @@ def normalize_name(value: str) -> str:
     if not value:
         raise ValueError("El nombre no puede quedar vacío")
     return value
+
+
+def humanize_visible_label(value: str) -> str:
+    words = re.sub(r"[-_]+", " ", normalize_text(value)).split()
+    if not words:
+        return ""
+    text = " ".join(words)
+    return text[:1].upper() + text[1:]
+
+
+def humanize_project_name(value: str) -> str:
+    return humanize_visible_label(value)
+
+
+def humanize_category_name(value: str) -> str:
+    return humanize_visible_label(value)
+
+
+def humanize_resource_type(value: str) -> str:
+    return HUMAN_TYPE_LABELS.get(value, humanize_visible_label(value).lower())
+
+
+def humanize_state_label(value: str) -> str:
+    return HUMAN_STATE_LABELS.get(value, humanize_visible_label(value).lower())
+
+
+def humanize_summary_quality_label(value: str) -> str:
+    return HUMAN_SUMMARY_QUALITY_LABELS.get(value, humanize_visible_label(value).lower())
+
+
+def format_visible_date(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
+    except ValueError:
+        return value
+    month = MONTH_NAMES_SHORT_ES[parsed.month - 1]
+    return f"{parsed.day:02d} {month} {parsed.year}, {parsed.hour:02d}:{parsed.minute:02d}"
 
 
 def normalize_optional_text(value: Optional[str]) -> Optional[str]:
@@ -903,6 +972,7 @@ def capture_entry(
     additional_content: Optional[str] = None,
     metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]] = None,
     metadata_timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
+    human_output: bool = False,
 ) -> CaptureOutcome:
     normalized_project = normalize_optional_text(project)
     if not normalized_project:
@@ -931,7 +1001,12 @@ def capture_entry(
         metadata_fetcher=metadata_fetcher,
         metadata_timeout_seconds=metadata_timeout_seconds,
     )
-    return CaptureOutcome(status="saved", prompt=build_confirmation(entry, file_path), entry=entry, file_path=file_path)
+    return CaptureOutcome(
+        status="saved",
+        prompt=build_confirmation(entry, file_path, technical=not human_output),
+        entry=entry,
+        file_path=file_path,
+    )
 
 
 def find_duplicate_url(file_path: Path, candidate_urls: Sequence[str]) -> Optional[DuplicateMatch]:
@@ -1003,7 +1078,25 @@ def append_entry(
     return entry, file_path
 
 
-def build_confirmation(entry: Entry, file_path: Path) -> str:
+def build_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
+    if not technical:
+        project = humanize_project_name(entry.proyecto)
+        category = humanize_category_name(entry.categoria)
+        resource_type = humanize_resource_type(entry.tipo)
+        quality = humanize_summary_quality_label(entry.calidad_resumen)
+        extras: list[str] = []
+        if entry.fuente:
+            extras.append("con fuente")
+        if entry.tags:
+            extras.append(f"{len(entry.tags)} tags")
+        if entry.contenido_adicional:
+            extras.append("con nota personal")
+        extras_text = f" ({', '.join(extras)})" if extras else ""
+        return (
+            f"Guardado en {project}, {category}: {entry.titulo}. "
+            f"Queda como {resource_type}, con {quality} y estado {humanize_state_label(entry.estado)}{extras_text}."
+        )
+
     extras: list[str] = [f"calidad_resumen={entry.calidad_resumen}", f"estado={entry.estado}"]
     if entry.fuente:
         extras.append("con fuente")
@@ -1172,7 +1265,19 @@ def update_existing_entry(
     return updated_entry, file_path
 
 
-def build_update_confirmation(entry: Entry, file_path: Path) -> str:
+def build_update_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
+    if not technical:
+        project = humanize_project_name(entry.proyecto)
+        category = humanize_category_name(entry.categoria)
+        details: list[str] = []
+        if entry.tags:
+            details.append(f"tags: {', '.join(entry.tags)}")
+        if entry.contenido_adicional:
+            details.append("nota personal actualizada")
+        details.append(humanize_summary_quality_label(entry.calidad_resumen))
+        suffix = f" ({'; '.join(details)})" if details else ""
+        return f"He actualizado la entrada de {project}, {category}: {entry.titulo}{suffix}."
+
     changes: list[str] = []
     if entry.tags:
         changes.append(f"tags={', '.join(entry.tags)}")
@@ -1184,7 +1289,11 @@ def build_update_confirmation(entry: Entry, file_path: Path) -> str:
     return f"Entrada actualizada sin duplicar: id={entry.entry_id} en {file_path}{details}"
 
 
-def build_migration_confirmation(result: MigrationResult) -> str:
+def build_migration_confirmation(result: MigrationResult, *, technical: bool = True) -> str:
+    if not technical:
+        project = humanize_project_name(result.project)
+        return f"Migración v0.2 completada para {project}: {len(result.migrated_entries)} entradas actualizadas sin pérdida de lectura."
+
     backup_text = f" backup={result.backup_path}" if result.backup_path else ""
     return (
         f"Migración v0.2 completada para {result.project}: {len(result.migrated_entries)} entradas."
@@ -1206,6 +1315,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--update-entry-id", help="Actualizar una entrada existente por id")
     parser.add_argument("--update-source-url", help="Actualizar una entrada existente localizándola por URL exacta")
     parser.add_argument("--migrate-project", action="store_true", help="Migrar el archivo del proyecto al formato v0.2")
+    parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     return parser.parse_args(argv)
 
@@ -1220,7 +1330,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if not args.project:
                 raise ValueError("--project es obligatorio al migrar un proyecto")
             result = migrate_project_file(project=args.project, data_dir=data_dir, create_backup=True)
-            print(build_migration_confirmation(result))
+            print(build_migration_confirmation(result, technical=args.technical))
             return 0
 
         if update_mode:
@@ -1235,7 +1345,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 summary=args.summary,
                 additional_content=args.additional_content,
             )
-            print(build_update_confirmation(entry, file_path))
+            print(build_update_confirmation(entry, file_path, technical=args.technical))
             return 0
 
         outcome = capture_entry(
@@ -1249,6 +1359,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             source=args.source,
             tags=args.tags,
             additional_content=args.additional_content,
+            human_output=not args.technical,
         )
         if outcome.status != "saved":
             print(outcome.prompt)
@@ -1258,20 +1369,27 @@ def main(argv: Optional[list[str]] = None) -> int:
         file_path = outcome.file_path
     except DuplicateEntryError as exc:  # pragma: no cover
         match = exc.match
-        print(
-            "ERROR: URL duplicada detectada. "
-            f"La URL {match.duplicate_url} ya existe en la entrada {match.entry.entry_id} "
-            f"de {match.entry.proyecto}/{match.entry.categoria}. "
-            "No se ha creado una entrada nueva. "
-            "Si quieres actualizarla de forma explícita, usa --update-entry-id o --update-source-url.",
-            file=sys.stderr,
-        )
+        if args.technical:
+            print(
+                "ERROR: URL duplicada detectada. "
+                f"La URL {match.duplicate_url} ya existe en la entrada {match.entry.entry_id} "
+                f"de {match.entry.proyecto}/{match.entry.categoria}. "
+                "No se ha creado una entrada nueva. "
+                "Si quieres actualizarla de forma explícita, usa --update-entry-id o --update-source-url.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Esa URL ya estaba guardada. No he creado un duplicado. "
+                "Si quieres, puedo actualizar la entrada existente en modo técnico.",
+                file=sys.stderr,
+            )
         return 1
     except Exception as exc:  # pragma: no cover
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(build_confirmation(entry, file_path))
+    print(build_confirmation(entry, file_path, technical=args.technical))
     return 0
 
 
