@@ -75,6 +75,7 @@ class StoredEntry:
     contenido_adicional: Optional[str] = None
     calidad_resumen: str = "fallback"
     estado: str = "nuevo"
+    fecha_actualizacion: Optional[str] = None
 
 
 @dataclass
@@ -182,6 +183,65 @@ class EntryLookupResult:
     warnings: list[ParseWarning]
 
 
+@dataclass
+class PaginationWindow:
+    total: int
+    offset: int
+    limit: int
+    start_index: int
+    end_index: int
+    visible_count: int
+    has_previous: bool
+    has_more: bool
+    visible_items: list
+
+
+def paginate_items(items: list, offset: int, limit: int) -> PaginationWindow:
+    safe_limit = max(limit, 1)
+    safe_offset = max(offset, 0)
+    total = len(items)
+    start_index = min(safe_offset, total)
+    end_index = min(start_index + safe_limit, total)
+    visible_items = items[start_index:end_index]
+    return PaginationWindow(
+        total=total,
+        offset=safe_offset,
+        limit=safe_limit,
+        start_index=start_index,
+        end_index=end_index,
+        visible_count=len(visible_items),
+        has_previous=start_index > 0,
+        has_more=end_index < total,
+        visible_items=visible_items,
+    )
+
+
+def build_pagination_label(window: PaginationWindow, *, noun: str = "resultados") -> str:
+    if window.total == 0:
+        return f"0 {noun}"
+    if window.visible_count == 0:
+        return f"sin más {noun}"
+    return f"{window.start_index + 1} a {window.end_index} de {window.total} {noun}"
+
+
+def build_next_page_hint(window: PaginationWindow, *, technical: bool = True) -> Optional[str]:
+    if not window.has_more:
+        return None
+    next_offset = window.end_index
+    next_position = next_offset + 1
+    if technical:
+        return f"Siguiente página disponible con --offset {next_offset}."
+    return f"Si quieres, pide 'más' o 'siguiente página' y te enseño desde la entrada {next_position}."
+
+
+def build_end_of_results_hint(window: PaginationWindow, *, technical: bool = True) -> Optional[str]:
+    if window.total == 0 or window.offset < window.total:
+        return None
+    if technical:
+        return f"No hay más resultados. El último tramo disponible llega hasta {window.total}."
+    return "No hay más resultados. Ya has llegado al final."
+
+
 def extract_entry_id(raw_block: str) -> Optional[str]:
     match = re.search(r'^id:\s+"?([^"\n]+)"?$', raw_block, re.MULTILINE)
     if match:
@@ -226,6 +286,7 @@ def parse_entry_block(block: str, position: int, source_path: Path) -> StoredEnt
         contenido_adicional=entry.contenido_adicional,
         calidad_resumen=entry.calidad_resumen,
         estado=entry.estado,
+        fecha_actualizacion=entry.fecha_actualizacion,
     )
 
 
@@ -624,6 +685,8 @@ def format_entry_full(entry: StoredEntry) -> str:
         f"Título: {entry.titulo}",
         f"Resumen: {entry.resumen}",
     ]
+    if entry.fecha_actualizacion:
+        lines.append(f"Fecha actualización: {entry.fecha_actualizacion}")
     if entry.fuente:
         lines.append(f"Fuente: {entry.fuente}")
     if entry.tags:
@@ -648,6 +711,8 @@ def format_entry_full_human(entry: StoredEntry) -> str:
     )
     lines.append(f"Estado: {humanize_state_label(entry.estado)}")
     lines.append(f"Resumen: {entry.resumen}")
+    if entry.fecha_actualizacion:
+        lines.append(f"Última edición: {format_visible_date(entry.fecha_actualizacion)}")
     if entry.fuente:
         lines.append(f"Fuente: {entry.fuente}")
     if entry.tags:
@@ -784,13 +849,19 @@ def build_output(
     overview: Optional[ProjectOverviewResult] = None,
     *,
     technical: bool = True,
+    offset: int = 0,
 ) -> str:
     if technical:
-        return build_output_technical(result, max_entries=max_entries, overview=overview)
-    return build_output_human(result, max_entries=max_entries, overview=overview)
+        return build_output_technical(result, max_entries=max_entries, overview=overview, offset=offset)
+    return build_output_human(result, max_entries=max_entries, overview=overview, offset=offset)
 
 
-def build_output_technical(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
+def build_output_technical(
+    result: ListingResult,
+    max_entries: int = 20,
+    overview: Optional[ProjectOverviewResult] = None,
+    offset: int = 0,
+) -> str:
     if result.requested_category is None and result.requested_state is None:
         header = f"Proyecto {result.project}: {result.total_entries} entradas válidas."
     elif result.requested_category is not None and result.requested_state is None:
@@ -810,12 +881,12 @@ def build_output_technical(result: ListingResult, max_entries: int = 20, overvie
         )
 
     lines = [header]
+    page = paginate_items(result.matched_entries, offset, max_entries)
 
-    if result.matched_entries:
-        visible_entries = result.matched_entries[:max_entries]
-        if len(result.matched_entries) > max_entries:
-            lines.append(f"Mostrando {len(visible_entries)} de {len(result.matched_entries)} entradas.")
-        for entry in visible_entries:
+    if result.matched_entries and page.visible_items:
+        if len(result.matched_entries) > max_entries or offset > 0:
+            lines.append(f"Mostrando entradas {build_pagination_label(page, noun='entradas')}.")
+        for entry in page.visible_items:
             lines.append(format_entry_summary(entry))
     else:
         lines.append("No hay entradas para mostrar.")
@@ -824,6 +895,13 @@ def build_output_technical(result: ListingResult, max_entries: int = 20, overvie
                 "Aviso de categoría ambigua o no encontrada. "
                 f"Quizá quisiste decir: {', '.join(result.suggested_categories)}."
             )
+
+    end_hint = build_end_of_results_hint(page, technical=True)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=True)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -835,7 +913,12 @@ def build_output_technical(result: ListingResult, max_entries: int = 20, overvie
     return "\n".join(lines)
 
 
-def build_output_human(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
+def build_output_human(
+    result: ListingResult,
+    max_entries: int = 20,
+    overview: Optional[ProjectOverviewResult] = None,
+    offset: int = 0,
+) -> str:
     project_label = humanize_project_name(result.project)
     if result.requested_category is None and result.requested_state is None:
         header = f"{project_label}: {result.total_entries} entradas." if result.total_entries != 1 else f"{project_label}: 1 entrada."
@@ -857,18 +940,25 @@ def build_output_human(result: ListingResult, max_entries: int = 20, overview: O
         header = f"{project_label}, {requested}, estado {requested_state}: {total} {noun} de {result.total_entries}."
 
     lines = [header]
+    page = paginate_items(result.matched_entries, offset, max_entries)
 
-    if result.matched_entries:
-        visible_entries = result.matched_entries[:max_entries]
-        if len(result.matched_entries) > max_entries:
-            lines.append(f"Te enseño {len(visible_entries)} de {len(result.matched_entries)} entradas.")
-        for entry in visible_entries:
+    if result.matched_entries and page.visible_items:
+        if len(result.matched_entries) > max_entries or offset > 0:
+            lines.append(f"Te enseño las entradas {build_pagination_label(page, noun='entradas')}.")
+        for entry in page.visible_items:
             lines.append(format_entry_summary_human(entry))
     else:
         lines.append("No he encontrado entradas para mostrar.")
         if result.requested_category is not None and result.suggested_categories:
             suggestions = ", ".join(humanize_category_name(item) for item in result.suggested_categories)
             lines.append(f"Quizá quisiste decir: {suggestions}.")
+
+    end_hint = build_end_of_results_hint(page, technical=False)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=False)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -880,27 +970,34 @@ def build_output_human(result: ListingResult, max_entries: int = 20, overview: O
     return "\n".join(lines)
 
 
-def build_search_output(result: SearchResult, max_entries: int = 20, *, technical: bool = True) -> str:
+def build_search_output(result: SearchResult, max_entries: int = 20, *, technical: bool = True, offset: int = 0) -> str:
     if technical:
-        return build_search_output_technical(result, max_entries=max_entries)
-    return build_search_output_human(result, max_entries=max_entries)
+        return build_search_output_technical(result, max_entries=max_entries, offset=offset)
+    return build_search_output_human(result, max_entries=max_entries, offset=offset)
 
 
-def build_search_output_technical(result: SearchResult, max_entries: int = 20) -> str:
+def build_search_output_technical(result: SearchResult, max_entries: int = 20, offset: int = 0) -> str:
     lines = [
         f'Proyecto {result.project}, búsqueda "{result.query}": '
         f"{len(result.matched_hits)} coincidencias en {result.total_entries} entradas válidas."
     ]
+    page = paginate_items(result.matched_hits, offset, max_entries)
 
-    if result.matched_hits:
-        visible_hits = result.matched_hits[:max_entries]
-        if len(result.matched_hits) > max_entries:
-            lines.append(f"Mostrando {len(visible_hits)} de {len(result.matched_hits)} coincidencias.")
-        for hit in visible_hits:
+    if result.matched_hits and page.visible_items:
+        if len(result.matched_hits) > max_entries or offset > 0:
+            lines.append(f"Mostrando coincidencias {build_pagination_label(page, noun='coincidencias')}.")
+        for hit in page.visible_items:
             lines.append(format_search_hit(hit))
         lines.append("Para ver una entrada completa, usa --entry-id con el id mostrado.")
     else:
         lines.append("No se encontraron coincidencias.")
+
+    end_hint = build_end_of_results_hint(page, technical=True)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=True)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -909,21 +1006,28 @@ def build_search_output_technical(result: SearchResult, max_entries: int = 20) -
     return "\n".join(lines)
 
 
-def build_search_output_human(result: SearchResult, max_entries: int = 20) -> str:
+def build_search_output_human(result: SearchResult, max_entries: int = 20, offset: int = 0) -> str:
     project_label = humanize_project_name(result.project)
     total_hits = len(result.matched_hits)
     noun = "coincidencia" if total_hits == 1 else "coincidencias"
     lines = [f'{project_label}, búsqueda "{result.query}": {total_hits} {noun} en {result.total_entries} entradas.']
+    page = paginate_items(result.matched_hits, offset, max_entries)
 
-    if result.matched_hits:
-        visible_hits = result.matched_hits[:max_entries]
-        if len(result.matched_hits) > max_entries:
-            lines.append(f"Te enseño {len(visible_hits)} de {len(result.matched_hits)} coincidencias.")
-        for hit in visible_hits:
+    if result.matched_hits and page.visible_items:
+        if len(result.matched_hits) > max_entries or offset > 0:
+            lines.append(f"Te enseño las coincidencias {build_pagination_label(page, noun='coincidencias')}.")
+        for hit in page.visible_items:
             lines.append(format_search_hit_human(hit))
         lines.append("Si quieres, te muestro la entrada completa.")
     else:
         lines.append("No he encontrado coincidencias.")
+
+    end_hint = build_end_of_results_hint(page, technical=False)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=False)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -974,13 +1078,14 @@ def build_operational_view_output(
     max_entries: int = 20,
     *,
     technical: bool = True,
+    offset: int = 0,
 ) -> str:
     if technical:
-        return build_operational_view_output_technical(result, max_entries=max_entries)
-    return build_operational_view_output_human(result, max_entries=max_entries)
+        return build_operational_view_output_technical(result, max_entries=max_entries, offset=offset)
+    return build_operational_view_output_human(result, max_entries=max_entries, offset=offset)
 
 
-def build_operational_view_output_technical(result: OperationalViewResult, max_entries: int = 20) -> str:
+def build_operational_view_output_technical(result: OperationalViewResult, max_entries: int = 20, offset: int = 0) -> str:
     if result.view_name == "recent":
         header = (
             f"Proyecto {result.project}, últimas entradas: "
@@ -1001,14 +1106,21 @@ def build_operational_view_output_technical(result: OperationalViewResult, max_e
         header = f"Proyecto {result.project}: {len(result.matched_entries)} entradas de {result.total_entries}."
 
     lines = [header]
-    if result.matched_entries:
-        visible_entries = result.matched_entries[:max_entries]
-        if len(result.matched_entries) > max_entries:
-            lines.append(f"Mostrando {len(visible_entries)} de {len(result.matched_entries)} entradas.")
-        for entry in visible_entries:
+    page = paginate_items(result.matched_entries, offset, max_entries)
+    if result.matched_entries and page.visible_items:
+        if len(result.matched_entries) > max_entries or offset > 0:
+            lines.append(f"Mostrando entradas {build_pagination_label(page, noun='entradas')}.")
+        for entry in page.visible_items:
             lines.append(format_entry_summary(entry))
     else:
         lines.append("No hay entradas para mostrar.")
+
+    end_hint = build_end_of_results_hint(page, technical=True)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=True)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -1017,7 +1129,7 @@ def build_operational_view_output_technical(result: OperationalViewResult, max_e
     return "\n".join(lines)
 
 
-def build_operational_view_output_human(result: OperationalViewResult, max_entries: int = 20) -> str:
+def build_operational_view_output_human(result: OperationalViewResult, max_entries: int = 20, offset: int = 0) -> str:
     project_label = humanize_project_name(result.project)
     if result.view_name == "recent":
         header = f"{project_label}, últimas entradas: {len(result.matched_entries)} de {result.total_entries}."
@@ -1039,16 +1151,23 @@ def build_operational_view_output_human(result: OperationalViewResult, max_entri
         empty_line = "No he encontrado entradas para mostrar."
 
     lines = [header]
-    if result.matched_entries:
-        visible_entries = result.matched_entries[:max_entries]
-        if len(result.matched_entries) > max_entries:
-            lines.append(f"Te enseño {len(visible_entries)} de {len(result.matched_entries)} entradas.")
-        for entry in visible_entries:
+    page = paginate_items(result.matched_entries, offset, max_entries)
+    if result.matched_entries and page.visible_items:
+        if len(result.matched_entries) > max_entries or offset > 0:
+            lines.append(f"Te enseño las entradas {build_pagination_label(page, noun='entradas')}.")
+        for entry in page.visible_items:
             lines.append(format_entry_summary_human(entry))
         if result.view_name == "pending_enrichment":
             lines.append("Si quieres, puedo ayudarte a enriquecer una de estas entradas ahora.")
     else:
         lines.append(empty_line)
+
+    end_hint = build_end_of_results_hint(page, technical=False)
+    if end_hint:
+        lines.append(end_hint)
+    next_hint = build_next_page_hint(page, technical=False)
+    if next_hint:
+        lines.append(next_hint)
 
     if result.warnings:
         lines.append(f"Avisos de lectura: {len(result.warnings)}")
@@ -1155,6 +1274,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
+    parser.add_argument("--offset", type=int, default=0, help="Desplazamiento para paginar resultados")
     args = parser.parse_args(argv)
     exclusive_modes = [
         bool(args.search),
@@ -1218,7 +1338,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 query=args.search,
                 data_dir=Path(args.data_dir),
             )
-            print(build_search_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            print(build_search_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
         if args.recent is not None:
@@ -1227,7 +1347,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 data_dir=Path(args.data_dir),
                 limit=max(args.recent, 0),
             )
-            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
         if args.summary_quality:
@@ -1236,7 +1356,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 quality=args.summary_quality,
                 data_dir=Path(args.data_dir),
             )
-            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
         if args.pending_enrichment:
@@ -1244,7 +1364,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 project=args.project,
                 data_dir=Path(args.data_dir),
             )
-            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
         result = list_entries(
@@ -1258,7 +1378,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview, technical=args.technical))
+    print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview, technical=args.technical, offset=args.offset))
     return 0
 
 

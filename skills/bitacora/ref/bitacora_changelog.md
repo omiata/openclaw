@@ -71,3 +71,11 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - materializada la configuración nativa del recordatorio diario de OpenClaw mediante `build_daily_enrichment_reminder_job()` y la previsualización del mensaje con `build_enrichment_reminder()`
 - ampliado el enriquecimiento de entradas existentes para acumular nota personal, fusionar tags sin duplicados y subir `calidad_resumen` a `usuario` cuando una entrada `fallback` se enriquece
 - añadidos y ejecutados `test_phase13.py`, `test_phase14.py`, `test_phase15.py` y `test_phase17.py`, más regresión satisfactoria sobre `test_phase1.py`, `test_phase2.py` y `test_phase4.py` a `test_phase12.py`
+
+### 2026-04-10 19:50:19 CEST+0200 - Bloque 5 completado (Fases 16, 18, 19 y 20)
+- añadida paginación simple con `offset` en listados, búsquedas y vistas operativas, mostrando tramos claros y pista conversacional para pedir "más" o "siguiente página"
+- incorporada canonicalización conservadora de URLs para deduplicación inteligente, cubriendo YouTube corto/largo, `trailing slash` y parámetros irrelevantes sin sobreagrupar URLs con query significativa
+- implementado upsert opt-in sobre duplicados, con oferta explícita de fusión y ampliación segura de la nota personal sin crear una entrada nueva
+- añadida edición completa de entradas para `categoria`, `tipo`, `titulo` y `fuente`, con `fecha_actualizacion`, preservación de `id` y `fecha`, y soporte de movimiento entre proyectos mediante reescritura atómica
+- reforzada la compatibilidad del formato almacenando `contenido_adicional` también en YAML y corrigiendo los códigos de salida CLI en flujos con proyecto o categoría ausentes
+- añadidos y ejecutados `test_phase16.py`, `test_phase18.py`, `test_phase19.py` y `test_phase20.py`, más regresión completa satisfactoria sobre `test_phase1.py` a `test_phase20.py`

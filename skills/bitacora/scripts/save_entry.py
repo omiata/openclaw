@@ -10,12 +10,12 @@ import sys
 import tempfile
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote_plus, unquote, urlparse
+from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 import yaml
@@ -44,6 +44,14 @@ DOCUMENT_EXTENSIONS = (
     ".rtf",
 )
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+IRRELEVANT_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "igshid",
+    "mc_cid",
+    "mc_eid",
+    "si",
+}
 LEGACY_SECTION_MARKERS = {
     "**Título**": "titulo_markdown",
     "**Resumen**": "resumen_markdown",
@@ -122,6 +130,7 @@ class Entry:
     contenido_adicional: Optional[str] = None
     calidad_resumen: str = "fallback"
     estado: str = "nuevo"
+    fecha_actualizacion: Optional[str] = None
 
 
 @dataclass
@@ -139,6 +148,7 @@ class CaptureOutcome:
     entry: Optional[Entry] = None
     file_path: Optional[Path] = None
     suggested_categories: tuple[str, ...] = ()
+    duplicate_match: Optional[DuplicateMatch] = None
 
 
 @dataclass
@@ -226,6 +236,10 @@ def format_visible_date(value: str) -> str:
     return f"{parsed.day:02d} {month} {parsed.year}, {parsed.hour:02d}:{parsed.minute:02d}"
 
 
+def current_timestamp_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 def normalize_optional_text(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -310,6 +324,79 @@ def extract_urls(*values: Optional[str]) -> tuple[str, ...]:
 def extract_first_url(*values: Optional[str]) -> Optional[str]:
     urls = extract_urls(*values)
     return urls[0] if urls else None
+
+
+def canonicalize_url(url: Optional[str]) -> Optional[str]:
+    normalized = normalize_optional_text(url)
+    if not normalized:
+        return None
+
+    try:
+        parsed = urlparse(normalized)
+    except Exception:
+        return normalized
+
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return normalized
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return normalized
+
+    port = parsed.port
+    if port and not ((parsed.scheme.lower() == "http" and port == 80) or (parsed.scheme.lower() == "https" and port == 443)):
+        netloc = f"{hostname}:{port}"
+    else:
+        netloc = hostname
+
+    if hostname in YOUTUBE_HOSTS:
+        video_id: Optional[str] = None
+        if hostname == "youtu.be":
+            video_id = parsed.path.strip("/").split("/")[0] or None
+        elif parsed.path == "/watch":
+            query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            video_id = query_params.get("v") or None
+        elif parsed.path.startswith("/shorts/") or parsed.path.startswith("/embed/"):
+            pieces = [piece for piece in parsed.path.split("/") if piece]
+            video_id = pieces[1] if len(pieces) >= 2 else None
+
+        if video_id:
+            return f"https://www.youtube.com/watch?v={video_id}"
+
+    if hostname in VIMEO_HOSTS:
+        pieces = [piece for piece in parsed.path.split("/") if piece]
+        numeric_piece = next((piece for piece in reversed(pieces) if piece.isdigit()), None)
+        if numeric_piece:
+            return f"https://vimeo.com/{numeric_piece}"
+
+    path = unquote(parsed.path or "")
+    if path in ("", "/"):
+        normalized_path = ""
+    else:
+        normalized_path = path.rstrip("/")
+        if not normalized_path.startswith("/"):
+            normalized_path = f"/{normalized_path}"
+
+    filtered_params: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        lowered = key.lower()
+        if lowered.startswith("utm_") or lowered in IRRELEVANT_QUERY_KEYS:
+            continue
+        filtered_params.append((key, value))
+    filtered_query = urlencode(filtered_params, doseq=True)
+
+    return urlunparse((parsed.scheme.lower(), netloc, normalized_path, "", filtered_query, ""))
+
+
+def comparable_url(url: Optional[str]) -> Optional[str]:
+    normalized = normalize_optional_text(url)
+    if not normalized:
+        return None
+    return canonicalize_url(normalized) or normalized
+
+
+def collect_entry_urls(entry: Entry) -> tuple[str, ...]:
+    return extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional)
 
 
 def is_plain_url(value: Optional[str]) -> bool:
@@ -690,7 +777,7 @@ def generate_entry(
 ) -> Entry:
     ensure_entry_has_material(content, source, additional_content, title)
 
-    now = datetime.now(timezone.utc)
+    now = current_timestamp_iso()
     normalized_project = normalize_name(project)
     normalized_category = normalize_name(category)
     normalized_content = normalize_text(content) if content else ""
@@ -740,7 +827,7 @@ def generate_entry(
     entry_id = f"entry-{time.time_ns() // 1_000_000}"
     return Entry(
         entry_id=entry_id,
-        fecha=now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        fecha=now,
         proyecto=normalized_project,
         categoria=normalized_category,
         tipo=normalized_type,
@@ -775,12 +862,15 @@ def render_frontmatter(entry: Entry) -> str:
     for key, value in (
         ("id", entry.entry_id),
         ("fecha", entry.fecha),
+        ("fecha_actualizacion", entry.fecha_actualizacion),
         ("proyecto", entry.proyecto),
         ("categoria", entry.categoria),
         ("tipo", entry.tipo),
         ("titulo", entry.titulo),
         ("resumen", entry.resumen),
     ):
+        if value in (None, ""):
+            continue
         lines.extend(render_yaml_string(key, value))
 
     if entry.fuente:
@@ -789,6 +879,8 @@ def render_frontmatter(entry: Entry) -> str:
         lines.append("tags:")
         for tag in entry.tags:
             lines.append(f'  - "{yaml_escape(tag)}"')
+    if entry.contenido_adicional:
+        lines.extend(render_yaml_string("contenido_adicional", entry.contenido_adicional))
     lines.extend(render_yaml_string("calidad_resumen", entry.calidad_resumen))
     lines.extend(render_yaml_string("estado", entry.estado))
     return "\n".join(lines)
@@ -895,6 +987,7 @@ def entry_from_block(block: str) -> Entry:
     return Entry(
         entry_id=str(parsed["id"]),
         fecha=str(parsed["fecha"]),
+        fecha_actualizacion=(str(parsed["fecha_actualizacion"]).strip() if parsed.get("fecha_actualizacion") not in (None, "") else None),
         proyecto=str(parsed["proyecto"]),
         categoria=str(parsed["categoria"]),
         tipo=str(parsed["tipo"]),
@@ -958,6 +1051,61 @@ def build_missing_category_prompt(project: str, suggestions: Sequence[str]) -> s
     return f"¿Qué categoría le pongo en {normalized_project}?"
 
 
+def build_duplicate_prompt(match: DuplicateMatch, *, technical: bool = True) -> str:
+    if technical:
+        return (
+            "URL duplicada detectada. "
+            f"La URL ya existe en la entrada {match.entry.entry_id} de {match.entry.proyecto}/{match.entry.categoria}. "
+            "No se ha creado una entrada nueva. "
+            "Si quieres fusionar una nueva observación, usa --on-duplicate merge con --update-entry-id o repite la captura con fusión explícita."
+        )
+
+    project = humanize_project_name(match.entry.proyecto)
+    category = humanize_category_name(match.entry.categoria)
+    return (
+        f"Esa URL ya estaba guardada en {project}, {category}: {match.entry.titulo}. "
+        "No he creado un duplicado. Si quieres, puedo fusionar tu nueva observación en la nota personal de esa entrada."
+    )
+
+
+def derive_upsert_note(
+    content: str,
+    *,
+    source: Optional[str],
+    additional_content: Optional[str],
+    title: Optional[str],
+) -> Optional[str]:
+    explicit_note = normalize_optional_text(additional_content)
+    if explicit_note:
+        return explicit_note
+
+    normalized_content = normalize_optional_text(content)
+    normalized_source = normalize_optional_text(source)
+    normalized_title = normalize_optional_text(title)
+    if normalized_content and not is_plain_url(normalized_content):
+        if normalized_source and normalized_content == normalized_source:
+            return None
+        if normalized_title and normalized_content == normalized_title:
+            return None
+        return normalized_content
+    return None
+
+
+def build_duplicate_merge_confirmation(entry: Entry, *, technical: bool = True) -> str:
+    if technical:
+        return (
+            f"Entrada existente fusionada sin duplicar: id={entry.entry_id} "
+            f"({entry.proyecto}/{entry.categoria}). fecha_actualizacion={entry.fecha_actualizacion or 'sin-cambios'}"
+        )
+
+    project = humanize_project_name(entry.proyecto)
+    category = humanize_category_name(entry.categoria)
+    return (
+        f"Ya existía esa URL en {project}, {category}, así que no he creado un duplicado. "
+        f"He fusionado la observación en la entrada: {entry.titulo}."
+    )
+
+
 def capture_entry(
     *,
     project: Optional[str],
@@ -973,6 +1121,7 @@ def capture_entry(
     metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]] = None,
     metadata_timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
     human_output: bool = False,
+    duplicate_strategy: str = "error",
 ) -> CaptureOutcome:
     normalized_project = normalize_optional_text(project)
     if not normalized_project:
@@ -987,20 +1136,53 @@ def capture_entry(
             suggested_categories=suggestions,
         )
 
-    entry, file_path = append_entry(
-        project=normalized_project,
-        category=normalized_category,
-        content=content,
-        data_dir=data_dir,
-        resource_type=resource_type,
-        title=title,
-        summary=summary,
-        source=source,
-        tags=tags,
-        additional_content=additional_content,
-        metadata_fetcher=metadata_fetcher,
-        metadata_timeout_seconds=metadata_timeout_seconds,
-    )
+    try:
+        entry, file_path = append_entry(
+            project=normalized_project,
+            category=normalized_category,
+            content=content,
+            data_dir=data_dir,
+            resource_type=resource_type,
+            title=title,
+            summary=summary,
+            source=source,
+            tags=tags,
+            additional_content=additional_content,
+            metadata_fetcher=metadata_fetcher,
+            metadata_timeout_seconds=metadata_timeout_seconds,
+        )
+    except DuplicateEntryError as exc:
+        if duplicate_strategy == "offer":
+            return CaptureOutcome(
+                status="duplicate",
+                prompt=build_duplicate_prompt(exc.match, technical=not human_output),
+                entry=exc.match.entry,
+                file_path=exc.match.file_path,
+                duplicate_match=exc.match,
+            )
+        if duplicate_strategy == "merge":
+            merged_entry, merged_path = update_existing_entry(
+                project=exc.match.entry.proyecto,
+                entry_id=exc.match.entry.entry_id,
+                data_dir=data_dir,
+                tags=tags,
+                summary=summary,
+                additional_content=derive_upsert_note(
+                    content,
+                    source=source,
+                    additional_content=additional_content,
+                    title=title,
+                ),
+            )
+            return CaptureOutcome(
+                status="merged",
+                prompt=build_duplicate_merge_confirmation(merged_entry, technical=not human_output),
+                entry=merged_entry,
+                file_path=merged_path,
+                duplicate_match=exc.match,
+            )
+        raise
+
     return CaptureOutcome(
         status="saved",
         prompt=build_confirmation(entry, file_path, technical=not human_output),
@@ -1013,16 +1195,57 @@ def find_duplicate_url(file_path: Path, candidate_urls: Sequence[str]) -> Option
     if not candidate_urls or not file_path.exists():
         return None
 
+    comparable_candidates = {
+        comparable_url(candidate_url): candidate_url
+        for candidate_url in candidate_urls
+        if comparable_url(candidate_url)
+    }
+    if not comparable_candidates:
+        return None
+
     content = file_path.read_text(encoding="utf-8")
     for block in split_entry_blocks(content):
         try:
             entry = entry_from_block(block)
         except Exception:
             continue
-        existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
-        for candidate_url in candidate_urls:
-            if candidate_url in existing_urls:
-                return DuplicateMatch(duplicate_url=candidate_url, entry=entry, file_path=file_path)
+        existing_urls = {
+            comparable_url(existing_url): existing_url
+            for existing_url in collect_entry_urls(entry)
+            if comparable_url(existing_url)
+        }
+        for candidate_key in comparable_candidates:
+            if candidate_key in existing_urls:
+                return DuplicateMatch(duplicate_url=existing_urls[candidate_key], entry=entry, file_path=file_path)
+    return None
+
+
+def find_duplicate_url_in_entries(
+    entries: Sequence[Entry],
+    candidate_urls: Sequence[str],
+    *,
+    file_path: Path,
+    exclude_entry_id: Optional[str] = None,
+) -> Optional[DuplicateMatch]:
+    comparable_candidates = {
+        comparable_url(candidate_url): candidate_url
+        for candidate_url in candidate_urls
+        if comparable_url(candidate_url)
+    }
+    if not comparable_candidates:
+        return None
+
+    for entry in entries:
+        if exclude_entry_id and entry.entry_id == exclude_entry_id:
+            continue
+        existing_urls = {
+            comparable_url(existing_url): existing_url
+            for existing_url in collect_entry_urls(entry)
+            if comparable_url(existing_url)
+        }
+        for candidate_key in comparable_candidates:
+            if candidate_key in existing_urls:
+                return DuplicateMatch(duplicate_url=existing_urls[candidate_key], entry=entry, file_path=file_path)
     return None
 
 
@@ -1142,6 +1365,7 @@ def migrate_entry_to_v0_2(entry: Entry) -> Entry:
     return Entry(
         entry_id=entry.entry_id,
         fecha=entry.fecha,
+        fecha_actualizacion=entry.fecha_actualizacion,
         proyecto=entry.proyecto,
         categoria=entry.categoria,
         tipo=entry.tipo,
@@ -1181,6 +1405,45 @@ def merge_personal_notes(existing_note: Optional[str], new_note: Optional[str]) 
     return f"{current}\n\n{addition}"
 
 
+def entry_changed(original: Entry, updated: Entry) -> bool:
+    return any(
+        getattr(original, field_name) != getattr(updated, field_name)
+        for field_name in (
+            "entry_id",
+            "fecha",
+            "proyecto",
+            "categoria",
+            "tipo",
+            "titulo",
+            "resumen",
+            "contenido",
+            "fuente",
+            "tags",
+            "contenido_adicional",
+            "calidad_resumen",
+            "estado",
+        )
+    )
+
+
+def stamp_updated_entry(original: Entry, updated: Entry) -> Entry:
+    if not entry_changed(original, updated):
+        return replace(updated, fecha_actualizacion=original.fecha_actualizacion)
+    return replace(updated, fecha_actualizacion=current_timestamp_iso())
+
+
+def load_project_entries_or_raise(project: str, data_dir: Path = DEFAULT_DATA_DIR) -> tuple[list[Entry], Path]:
+    normalized_project = normalize_name(project)
+    file_path = data_dir / f"{normalized_project}.md"
+    if not file_path.exists():
+        raise ValueError(f"No existe el archivo del proyecto {normalized_project}: {file_path}")
+
+    entries: list[Entry] = []
+    for block in split_entry_blocks(file_path.read_text(encoding="utf-8")):
+        entries.append(entry_from_block(block))
+    return entries, file_path
+
+
 def migrate_project_file(
     project: str,
     data_dir: Path = DEFAULT_DATA_DIR,
@@ -1211,10 +1474,15 @@ def migrate_project_file(
 
 
 def entry_matches_target(entry: Entry, *, entry_id: Optional[str], source_url: Optional[str]) -> bool:
-    existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
+    existing_urls = {
+        comparable_url(existing_url)
+        for existing_url in collect_entry_urls(entry)
+        if comparable_url(existing_url)
+    }
+    comparable_target = comparable_url(source_url)
     return bool(
         (entry_id and entry.entry_id == entry_id.strip())
-        or (source_url and source_url.strip() in existing_urls)
+        or (comparable_target and comparable_target in existing_urls)
     )
 
 
@@ -1227,24 +1495,19 @@ def mutate_existing_entry(
     mutator: Callable[[Entry], Entry],
 ) -> tuple[Entry, Path]:
     normalized_project = normalize_name(project)
-    file_path = data_dir / f"{normalized_project}.md"
-    if not file_path.exists():
-        raise ValueError(f"No existe el archivo del proyecto {normalized_project}: {file_path}")
+    entries, file_path = load_project_entries_or_raise(normalized_project, data_dir=data_dir)
     if not entry_id and not source_url:
         raise ValueError("Debe indicarse --update-entry-id o --update-source-url")
 
-    original_content = file_path.read_text(encoding="utf-8")
-    raw_blocks = split_entry_blocks(original_content)
     updated_blocks: list[str] = []
     updated_entry: Optional[Entry] = None
 
-    for block in raw_blocks:
-        entry = entry_from_block(block)
+    for entry in entries:
         if not entry_matches_target(entry, entry_id=entry_id, source_url=source_url):
             updated_blocks.append(render_entry(entry))
             continue
 
-        updated_entry = mutator(entry)
+        updated_entry = stamp_updated_entry(entry, mutator(entry))
         updated_blocks.append(render_entry(updated_entry))
 
     if updated_entry is None:
@@ -1346,6 +1609,141 @@ def update_entry_state(
     )
 
 
+def atomic_write_many(files_to_contents: Sequence[tuple[Path, str]]) -> None:
+    if not files_to_contents:
+        return
+
+    originals: dict[Path, Optional[str]] = {}
+    temp_paths: dict[Path, Path] = {}
+    replaced_paths: list[Path] = []
+
+    try:
+        for file_path, content in files_to_contents:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            originals[file_path] = file_path.read_text(encoding="utf-8") if file_path.exists() else None
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=file_path.parent, delete=False) as handle:
+                handle.write(content)
+                temp_paths[file_path] = Path(handle.name)
+
+        for file_path, _content in files_to_contents:
+            temp_path = temp_paths[file_path]
+            temp_path.replace(file_path)
+            replaced_paths.append(file_path)
+            temp_paths.pop(file_path, None)
+    except Exception:
+        for file_path in reversed(replaced_paths):
+            original_content = originals[file_path]
+            if original_content is None:
+                if file_path.exists():
+                    file_path.unlink()
+            else:
+                atomic_write(file_path, original_content)
+        raise
+    finally:
+        for temp_path in temp_paths.values():
+            if temp_path.exists():
+                temp_path.unlink()
+
+
+def edit_existing_entry(
+    project: str,
+    *,
+    entry_id: Optional[str] = None,
+    source_url: Optional[str] = None,
+    data_dir: Path = DEFAULT_DATA_DIR,
+    target_project: Optional[str] = None,
+    category: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    title: Optional[str] = None,
+    source: Optional[str] = None,
+) -> tuple[Entry, Path]:
+    if not entry_id and not source_url:
+        raise ValueError("Debe indicarse --update-entry-id o --update-source-url")
+
+    source_project = normalize_name(project)
+    source_entries, source_path = load_project_entries_or_raise(source_project, data_dir=data_dir)
+
+    source_index = next(
+        (
+            index
+            for index, entry in enumerate(source_entries)
+            if entry_matches_target(entry, entry_id=entry_id, source_url=source_url)
+        ),
+        None,
+    )
+    if source_index is None:
+        target = entry_id.strip() if entry_id else source_url.strip()
+        raise ValueError(f"No se encontró ninguna entrada para actualizar con {target}")
+
+    original_entry = source_entries[source_index]
+    normalized_target_project = normalize_name(target_project) if target_project else original_entry.proyecto
+    normalized_category = normalize_name(category) if category else original_entry.categoria
+    normalized_type = normalize_resource_type(resource_type) if resource_type else original_entry.tipo
+    normalized_title = shorten_line(title, 90) if normalize_optional_text(title) else original_entry.titulo
+    normalized_source = normalize_optional_text(source) if source is not None else original_entry.fuente
+
+    for field_name, value in (("categoria", normalized_category), ("titulo", normalized_title), ("fuente", normalized_source)):
+        ensure_no_entry_delimiter(field_name, value)
+
+    updated_entry = stamp_updated_entry(
+        original_entry,
+        Entry(
+            entry_id=original_entry.entry_id,
+            fecha=original_entry.fecha,
+            fecha_actualizacion=original_entry.fecha_actualizacion,
+            proyecto=normalized_target_project,
+            categoria=normalized_category,
+            tipo=normalized_type,
+            titulo=normalized_title,
+            resumen=original_entry.resumen,
+            contenido=original_entry.contenido,
+            fuente=normalized_source,
+            tags=original_entry.tags,
+            contenido_adicional=original_entry.contenido_adicional,
+            calidad_resumen=original_entry.calidad_resumen,
+            estado=original_entry.estado,
+        ),
+    )
+
+    if normalized_target_project == source_project:
+        updated_entries = list(source_entries)
+        duplicate_match = find_duplicate_url_in_entries(
+            updated_entries,
+            extract_urls(updated_entry.fuente, updated_entry.contenido, updated_entry.contenido_adicional),
+            file_path=source_path,
+            exclude_entry_id=updated_entry.entry_id,
+        )
+        if duplicate_match:
+            raise DuplicateEntryError(duplicate_match)
+
+        updated_entries[source_index] = updated_entry
+        atomic_write(source_path, build_project_content(updated_entries))
+        return updated_entry, source_path
+
+    target_path = data_dir / f"{normalized_target_project}.md"
+    target_entries: list[Entry] = []
+    if target_path.exists():
+        target_entries, _ = load_project_entries_or_raise(normalized_target_project, data_dir=data_dir)
+
+    duplicate_match = find_duplicate_url_in_entries(
+        target_entries,
+        extract_urls(updated_entry.fuente, updated_entry.contenido, updated_entry.contenido_adicional),
+        file_path=target_path,
+    )
+    if duplicate_match:
+        raise DuplicateEntryError(duplicate_match)
+
+    updated_source_entries = [entry for index, entry in enumerate(source_entries) if index != source_index]
+    updated_target_entries = [*target_entries, updated_entry]
+    atomic_write_many(
+        (
+            (source_path, build_project_content(updated_source_entries)),
+            (target_path, build_project_content(updated_target_entries)),
+        )
+    )
+    return updated_entry, target_path
+
+
 def build_update_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
     if not technical:
         project = humanize_project_name(entry.proyecto)
@@ -1385,6 +1783,23 @@ def build_state_update_confirmation(entry: Entry, file_path: Path, *, technical:
     )
 
 
+def build_edit_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
+    if not technical:
+        project = humanize_project_name(entry.proyecto)
+        category = humanize_category_name(entry.categoria)
+        return (
+            f"He actualizado la entrada en {project}, {category}: {entry.titulo}."
+            if not entry.fecha_actualizacion
+            else f"He actualizado la entrada en {project}, {category}: {entry.titulo}. Queda registrada como editada."
+        )
+
+    return (
+        f"Entrada editada: id={entry.entry_id} en {file_path} -> "
+        f"{entry.proyecto}/{entry.categoria}, tipo={entry.tipo}, titulo={entry.titulo!r}, "
+        f"fuente={entry.fuente!r}, fecha_actualizacion={entry.fecha_actualizacion!r}"
+    )
+
+
 def build_migration_confirmation(result: MigrationResult, *, technical: bool = True) -> str:
     if not technical:
         project = humanize_project_name(result.project)
@@ -1411,6 +1826,17 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--update-entry-id", help="Actualizar una entrada existente por id")
     parser.add_argument("--update-source-url", help="Actualizar una entrada existente localizándola por URL exacta")
     parser.add_argument("--set-state", help="Cambiar el estado de una entrada existente: nuevo, revisado, descartado")
+    parser.add_argument("--set-project", help="Mover la entrada a otro proyecto")
+    parser.add_argument("--set-category", help="Cambiar la categoría de una entrada existente")
+    parser.add_argument("--set-type", dest="set_resource_type", help="Cambiar el tipo de una entrada existente")
+    parser.add_argument("--set-title", help="Cambiar el título de una entrada existente")
+    parser.add_argument("--set-source", help="Cambiar la fuente de una entrada existente")
+    parser.add_argument(
+        "--on-duplicate",
+        choices=("error", "offer", "merge"),
+        default="error",
+        help="Qué hacer si la URL ya existe: error, offer, merge",
+    )
     parser.add_argument("--migrate-project", action="store_true", help="Migrar el archivo del proyecto al formato v0.2")
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
@@ -1421,6 +1847,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     data_dir = Path(args.data_dir)
     update_mode = bool(args.update_entry_id or args.update_source_url)
+    edit_mode = bool(args.set_project or args.set_category or args.set_resource_type or args.set_title or args.set_source)
 
     try:
         if args.migrate_project:
@@ -1442,6 +1869,21 @@ def main(argv: Optional[list[str]] = None) -> int:
                     data_dir=data_dir,
                 )
                 print(build_state_update_confirmation(entry, file_path, technical=args.technical))
+                return 0
+
+            if edit_mode:
+                entry, file_path = edit_existing_entry(
+                    project=args.project,
+                    entry_id=args.update_entry_id,
+                    source_url=args.update_source_url,
+                    data_dir=data_dir,
+                    target_project=args.set_project,
+                    category=args.set_category,
+                    resource_type=args.set_resource_type,
+                    title=args.set_title,
+                    source=args.set_source,
+                )
+                print(build_edit_confirmation(entry, file_path, technical=args.technical))
                 return 0
 
             entry, file_path = update_existing_entry(
@@ -1468,10 +1910,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             tags=args.tags,
             additional_content=args.additional_content,
             human_output=not args.technical,
+            duplicate_strategy=args.on_duplicate,
         )
-        if outcome.status != "saved":
+        if outcome.status not in {"saved", "merged"}:
             print(outcome.prompt)
-            return 2
+            return 2 if outcome.status in {"needs_project", "needs_category", "duplicate"} else 1
 
         entry = outcome.entry
         file_path = outcome.file_path
@@ -1497,7 +1940,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(build_confirmation(entry, file_path, technical=args.technical))
+    if outcome.status == "merged":
+        print(outcome.prompt)
+    else:
+        print(build_confirmation(entry, file_path, technical=args.technical))
     return 0
 
 

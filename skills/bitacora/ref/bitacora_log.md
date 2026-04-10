@@ -107,3 +107,14 @@ REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se activó el flujo operativo de v0.2 con estados funcionales, vistas de últimas y pendientes de enriquecer, recordatorio diario apoyado en el mecanismo nativo de OpenClaw y enriquecimiento progresivo de entradas existentes con nota personal y tags. El bloque queda validado con `test_phase13.py`, `test_phase14.py`, `test_phase15.py` y `test_phase17.py`, además de regresión satisfactoria sobre las fases 1, 2 y 4 a 12.
 
+2026-04-10 19:50:19 CEST+0200
+FECHA: 2026-04-10 19:50:19 CEST+0200
+FASE: Bloque 5. Fases 16, 18, 19 y 20 (Escalado funcional)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 20
+TESTS PASADOS: 20
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: SI
+COMMIT REALIZADO: NO
+DESCRIPCION: Se implementaron la paginación con offset y navegación larga, la canonicalización conservadora de URLs, el upsert opt-in sobre duplicados y la edición completa con fecha_actualizacion manteniendo escritura atómica. Durante la validación global aparecieron dos incompatibilidades colaterales (contenido_adicional en YAML y código de salida CLI en prompts incompletos), quedaron corregidas y la batería test_phase1.py a test_phase20.py terminó en verde.
+
