@@ -96,3 +96,14 @@ REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se implementó la salida humana por defecto con modo técnico explícito, ocultando IDs, rutas y fechas ISO en confirmaciones, listados y búsquedas visibles. También se humanizaron proyectos, categorías y tipos sin alterar las claves internas, validando el bloque con `test_phase11.py`, `test_phase12.py` y regresión ejecutada sobre las fases 5, 6, 8 y 10.
 
+2026-04-10 19:25:18 CEST+0200
+FECHA: 2026-04-10 19:25:18 CEST+0200
+FASE: Bloque 4. Fases 13, 14, 15 y 17 (Flujo operativo y recordatorio)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 18
+TESTS PASADOS: 18
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se activó el flujo operativo de v0.2 con estados funcionales, vistas de últimas y pendientes de enriquecer, recordatorio diario apoyado en el mecanismo nativo de OpenClaw y enriquecimiento progresivo de entradas existentes con nota personal y tags. El bloque queda validado con `test_phase13.py`, `test_phase14.py`, `test_phase15.py` y `test_phase17.py`, además de regresión satisfactoria sobre las fases 1, 2 y 4 a 12.
+

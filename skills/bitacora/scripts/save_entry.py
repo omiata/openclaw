@@ -1164,6 +1164,23 @@ def build_project_content(entries: Sequence[Entry]) -> str:
     return final_content
 
 
+def merge_personal_notes(existing_note: Optional[str], new_note: Optional[str]) -> Optional[str]:
+    current = normalize_optional_text(existing_note)
+    addition = normalize_optional_text(new_note)
+
+    if not addition:
+        return current
+    if not current:
+        return addition
+    if addition == current:
+        return current
+
+    existing_chunks = [normalize_text(chunk) for chunk in re.split(r"\n\s*\n", current) if normalize_optional_text(chunk)]
+    if addition in existing_chunks:
+        return current
+    return f"{current}\n\n{addition}"
+
+
 def migrate_project_file(
     project: str,
     data_dir: Path = DEFAULT_DATA_DIR,
@@ -1193,15 +1210,21 @@ def migrate_project_file(
     )
 
 
-def update_existing_entry(
+def entry_matches_target(entry: Entry, *, entry_id: Optional[str], source_url: Optional[str]) -> bool:
+    existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
+    return bool(
+        (entry_id and entry.entry_id == entry_id.strip())
+        or (source_url and source_url.strip() in existing_urls)
+    )
+
+
+def mutate_existing_entry(
     project: str,
     *,
     entry_id: Optional[str] = None,
     source_url: Optional[str] = None,
     data_dir: Path = DEFAULT_DATA_DIR,
-    tags: Optional[Sequence[str]] = None,
-    summary: Optional[str] = None,
-    additional_content: Optional[str] = None,
+    mutator: Callable[[Entry], Entry],
 ) -> tuple[Entry, Path]:
     normalized_project = normalize_name(project)
     file_path = data_dir / f"{normalized_project}.md"
@@ -1215,29 +1238,54 @@ def update_existing_entry(
     updated_blocks: list[str] = []
     updated_entry: Optional[Entry] = None
 
+    for block in raw_blocks:
+        entry = entry_from_block(block)
+        if not entry_matches_target(entry, entry_id=entry_id, source_url=source_url):
+            updated_blocks.append(render_entry(entry))
+            continue
+
+        updated_entry = mutator(entry)
+        updated_blocks.append(render_entry(updated_entry))
+
+    if updated_entry is None:
+        target = entry_id.strip() if entry_id else source_url.strip()
+        raise ValueError(f"No se encontró ninguna entrada para actualizar con {target}")
+
+    final_content = "\n".join(updated_blocks)
+    if final_content and not final_content.endswith("\n"):
+        final_content += "\n"
+    atomic_write(file_path, final_content)
+    return updated_entry, file_path
+
+
+def update_existing_entry(
+    project: str,
+    *,
+    entry_id: Optional[str] = None,
+    source_url: Optional[str] = None,
+    data_dir: Path = DEFAULT_DATA_DIR,
+    tags: Optional[Sequence[str]] = None,
+    summary: Optional[str] = None,
+    additional_content: Optional[str] = None,
+) -> tuple[Entry, Path]:
     normalized_summary = normalize_optional_text(summary)
     normalized_additional = normalize_optional_text(additional_content)
     normalized_new_tags = normalize_tags(tags)
 
-    for block in raw_blocks:
-        entry = entry_from_block(block)
-        existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
-        is_target = (entry_id and entry.entry_id == entry_id.strip()) or (source_url and source_url.strip() in existing_urls)
-        if not is_target:
-            updated_blocks.append(render_entry(entry))
-            continue
-
+    def mutator(entry: Entry) -> Entry:
         merged_tags = entry.tags
         if normalized_new_tags:
             merged_tags = normalize_tags([*entry.tags, *normalized_new_tags])
 
         new_summary = normalized_summary or entry.resumen
-        new_note = normalized_additional if normalized_additional is not None else entry.contenido_adicional
+        new_note = merge_personal_notes(entry.contenido_adicional, normalized_additional)
         updated_quality = entry.calidad_resumen
         if normalized_summary is not None:
             updated_quality = "usuario"
+        elif normalized_additional is not None and entry.calidad_resumen == "fallback":
+            updated_quality = "usuario"
 
-        updated_entry = Entry(
+        return Entry(
             entry_id=entry.entry_id,
             fecha=entry.fecha,
             proyecto=entry.proyecto,
@@ -1252,17 +1300,50 @@ def update_existing_entry(
             calidad_resumen=updated_quality,
             estado=entry.estado,
         )
-        updated_blocks.append(render_entry(updated_entry))
 
-    if updated_entry is None:
-        target = entry_id.strip() if entry_id else source_url.strip()
-        raise ValueError(f"No se encontró ninguna entrada para actualizar con {target}")
+    return mutate_existing_entry(
+        project=project,
+        entry_id=entry_id,
+        source_url=source_url,
+        data_dir=data_dir,
+        mutator=mutator,
+    )
 
-    final_content = "\n".join(updated_blocks)
-    if final_content and not final_content.endswith("\n"):
-        final_content += "\n"
-    atomic_write(file_path, final_content)
-    return updated_entry, file_path
+
+def update_entry_state(
+    project: str,
+    *,
+    state: str,
+    entry_id: Optional[str] = None,
+    source_url: Optional[str] = None,
+    data_dir: Path = DEFAULT_DATA_DIR,
+) -> tuple[Entry, Path]:
+    normalized_state = normalize_state(state)
+
+    def mutator(entry: Entry) -> Entry:
+        return Entry(
+            entry_id=entry.entry_id,
+            fecha=entry.fecha,
+            proyecto=entry.proyecto,
+            categoria=entry.categoria,
+            tipo=entry.tipo,
+            titulo=entry.titulo,
+            resumen=entry.resumen,
+            contenido=entry.contenido,
+            fuente=entry.fuente,
+            tags=entry.tags,
+            contenido_adicional=entry.contenido_adicional,
+            calidad_resumen=entry.calidad_resumen,
+            estado=normalized_state,
+        )
+
+    return mutate_existing_entry(
+        project=project,
+        entry_id=entry_id,
+        source_url=source_url,
+        data_dir=data_dir,
+        mutator=mutator,
+    )
 
 
 def build_update_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
@@ -1287,6 +1368,21 @@ def build_update_confirmation(entry: Entry, file_path: Path, *, technical: bool 
         changes.append(f"calidad_resumen={entry.calidad_resumen}")
     details = f" ({'; '.join(changes)})" if changes else ""
     return f"Entrada actualizada sin duplicar: id={entry.entry_id} en {file_path}{details}"
+
+
+def build_state_update_confirmation(entry: Entry, file_path: Path, *, technical: bool = True) -> str:
+    if not technical:
+        project = humanize_project_name(entry.proyecto)
+        category = humanize_category_name(entry.categoria)
+        return (
+            f"He dejado la entrada de {project}, {category}, como {humanize_state_label(entry.estado)}: "
+            f"{entry.titulo}."
+        )
+
+    return (
+        f"Estado actualizado: id={entry.entry_id} en {file_path} -> estado={entry.estado} "
+        f"({entry.proyecto}/{entry.categoria})"
+    )
 
 
 def build_migration_confirmation(result: MigrationResult, *, technical: bool = True) -> str:
@@ -1314,6 +1410,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--additional-content", help="Nota libre adicional del usuario")
     parser.add_argument("--update-entry-id", help="Actualizar una entrada existente por id")
     parser.add_argument("--update-source-url", help="Actualizar una entrada existente localizándola por URL exacta")
+    parser.add_argument("--set-state", help="Cambiar el estado de una entrada existente: nuevo, revisado, descartado")
     parser.add_argument("--migrate-project", action="store_true", help="Migrar el archivo del proyecto al formato v0.2")
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
@@ -1336,6 +1433,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         if update_mode:
             if not args.project:
                 raise ValueError("--project es obligatorio al actualizar una entrada")
+            if args.set_state:
+                entry, file_path = update_entry_state(
+                    project=args.project,
+                    state=args.set_state,
+                    entry_id=args.update_entry_id,
+                    source_url=args.update_source_url,
+                    data_dir=data_dir,
+                )
+                print(build_state_update_confirmation(entry, file_path, technical=args.technical))
+                return 0
+
             entry, file_path = update_existing_entry(
                 project=args.project,
                 entry_id=args.update_entry_id,

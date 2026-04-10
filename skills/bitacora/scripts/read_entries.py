@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import difflib
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -23,7 +24,12 @@ from save_entry import (
     humanize_state_label,
     humanize_summary_quality_label,
     normalize_name,
+    normalize_state,
+    normalize_summary_quality,
 )
+
+REMINDER_CRON_EXPRESSION = "0 20 * * *"
+REMINDER_TIMEZONE = "Europe/Madrid"
 
 REQUIRED_FIELDS = (
     "id",
@@ -80,7 +86,19 @@ class ListingResult:
     warnings: list[ParseWarning]
     requested_category: Optional[str] = None
     normalized_category: Optional[str] = None
+    requested_state: Optional[str] = None
+    normalized_state: Optional[str] = None
     suggested_categories: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OperationalViewResult:
+    project: str
+    file_path: Path
+    total_entries: int
+    matched_entries: list[StoredEntry]
+    warnings: list[ParseWarning]
+    view_name: str
 
 
 @dataclass
@@ -339,6 +357,18 @@ def filter_entries_by_category(entries: list[StoredEntry], category: str) -> tup
     return normalized_category, matched
 
 
+def filter_entries_by_state(entries: list[StoredEntry], state: str) -> tuple[str, list[StoredEntry]]:
+    normalized_state = normalize_state(state)
+    matched = [entry for entry in entries if normalize_state(entry.estado) == normalized_state]
+    return normalized_state, matched
+
+
+def filter_entries_by_summary_quality(entries: list[StoredEntry], quality: str) -> tuple[str, list[StoredEntry]]:
+    normalized_quality = normalize_summary_quality(quality)
+    matched = [entry for entry in entries if normalize_summary_quality(entry.calidad_resumen) == normalized_quality]
+    return normalized_quality, matched
+
+
 def normalize_search_text(value: str) -> str:
     return " ".join(ascii_fold(value).lower().split())
 
@@ -399,9 +429,22 @@ def list_entries(
     project: str,
     data_dir: Path = DEFAULT_DATA_DIR,
     category: Optional[str] = None,
+    state: Optional[str] = None,
 ) -> ListingResult:
     entries, warnings, file_path = load_entries(project=project, data_dir=data_dir)
-    if category is None:
+    matched_entries = entries
+    normalized_category: Optional[str] = None
+    normalized_state: Optional[str] = None
+    suggestions: list[str] = []
+
+    if category is not None:
+        normalized_category, matched_entries = filter_entries_by_category(matched_entries, category)
+        suggestions = suggest_categories(entries, category) if not matched_entries else []
+
+    if state is not None:
+        normalized_state, matched_entries = filter_entries_by_state(matched_entries, state)
+
+    if category is None and state is None:
         return ListingResult(
             project=normalize_name(project),
             file_path=file_path,
@@ -410,8 +453,6 @@ def list_entries(
             warnings=warnings,
         )
 
-    normalized_category, matched_entries = filter_entries_by_category(entries, category)
-    suggestions = suggest_categories(entries, category) if not matched_entries else []
     return ListingResult(
         project=normalize_name(project),
         file_path=file_path,
@@ -420,7 +461,55 @@ def list_entries(
         warnings=warnings,
         requested_category=category,
         normalized_category=normalized_category,
+        requested_state=state,
+        normalized_state=normalized_state,
         suggested_categories=suggestions,
+    )
+
+
+def list_recent_entries(project: str, data_dir: Path = DEFAULT_DATA_DIR, limit: int = 5) -> OperationalViewResult:
+    entries, warnings, file_path = load_entries(project=project, data_dir=data_dir)
+    return OperationalViewResult(
+        project=normalize_name(project),
+        file_path=file_path,
+        total_entries=len(entries),
+        matched_entries=entries[: max(limit, 0)],
+        warnings=warnings,
+        view_name="recent",
+    )
+
+
+def list_entries_by_summary_quality(
+    project: str,
+    quality: str,
+    data_dir: Path = DEFAULT_DATA_DIR,
+) -> OperationalViewResult:
+    entries, warnings, file_path = load_entries(project=project, data_dir=data_dir)
+    normalized_quality, matched_entries = filter_entries_by_summary_quality(entries, quality)
+    return OperationalViewResult(
+        project=normalize_name(project),
+        file_path=file_path,
+        total_entries=len(entries),
+        matched_entries=matched_entries,
+        warnings=warnings,
+        view_name=f"summary_quality:{normalized_quality}",
+    )
+
+
+def list_pending_enrichment_entries(project: str, data_dir: Path = DEFAULT_DATA_DIR) -> OperationalViewResult:
+    entries, warnings, file_path = load_entries(project=project, data_dir=data_dir)
+    matched_entries = [
+        entry
+        for entry in entries
+        if normalize_summary_quality(entry.calidad_resumen) == "fallback" and normalize_state(entry.estado) != "descartado"
+    ]
+    return OperationalViewResult(
+        project=normalize_name(project),
+        file_path=file_path,
+        total_entries=len(entries),
+        matched_entries=matched_entries,
+        warnings=warnings,
+        view_name="pending_enrichment",
     )
 
 
@@ -702,11 +791,21 @@ def build_output(
 
 
 def build_output_technical(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
-    if result.requested_category is None:
+    if result.requested_category is None and result.requested_state is None:
         header = f"Proyecto {result.project}: {result.total_entries} entradas válidas."
-    else:
+    elif result.requested_category is not None and result.requested_state is None:
         header = (
             f"Proyecto {result.project}, categoría {result.normalized_category}: "
+            f"{len(result.matched_entries)} entradas de {result.total_entries} válidas."
+        )
+    elif result.requested_category is None and result.requested_state is not None:
+        header = (
+            f"Proyecto {result.project}, estado {result.normalized_state}: "
+            f"{len(result.matched_entries)} entradas de {result.total_entries} válidas."
+        )
+    else:
+        header = (
+            f"Proyecto {result.project}, categoría {result.normalized_category}, estado {result.normalized_state}: "
             f"{len(result.matched_entries)} entradas de {result.total_entries} válidas."
         )
 
@@ -738,13 +837,24 @@ def build_output_technical(result: ListingResult, max_entries: int = 20, overvie
 
 def build_output_human(result: ListingResult, max_entries: int = 20, overview: Optional[ProjectOverviewResult] = None) -> str:
     project_label = humanize_project_name(result.project)
-    if result.requested_category is None:
+    if result.requested_category is None and result.requested_state is None:
         header = f"{project_label}: {result.total_entries} entradas." if result.total_entries != 1 else f"{project_label}: 1 entrada."
-    else:
+    elif result.requested_category is not None and result.requested_state is None:
         requested = humanize_category_name(result.normalized_category or normalize_name(result.requested_category))
         total = len(result.matched_entries)
         noun = "entrada" if total == 1 else "entradas"
         header = f"{project_label}, {requested}: {total} {noun} de {result.total_entries}."
+    elif result.requested_category is None and result.requested_state is not None:
+        requested_state = humanize_state_label(result.normalized_state or normalize_state(result.requested_state))
+        total = len(result.matched_entries)
+        noun = "entrada" if total == 1 else "entradas"
+        header = f"{project_label}, estado {requested_state}: {total} {noun} de {result.total_entries}."
+    else:
+        requested = humanize_category_name(result.normalized_category or normalize_name(result.requested_category))
+        requested_state = humanize_state_label(result.normalized_state or normalize_state(result.requested_state))
+        total = len(result.matched_entries)
+        noun = "entrada" if total == 1 else "entradas"
+        header = f"{project_label}, {requested}, estado {requested_state}: {total} {noun} de {result.total_entries}."
 
     lines = [header]
 
@@ -859,6 +969,144 @@ def build_entry_output_human(result: EntryLookupResult) -> str:
     return "\n".join(lines)
 
 
+def build_operational_view_output(
+    result: OperationalViewResult,
+    max_entries: int = 20,
+    *,
+    technical: bool = True,
+) -> str:
+    if technical:
+        return build_operational_view_output_technical(result, max_entries=max_entries)
+    return build_operational_view_output_human(result, max_entries=max_entries)
+
+
+def build_operational_view_output_technical(result: OperationalViewResult, max_entries: int = 20) -> str:
+    if result.view_name == "recent":
+        header = (
+            f"Proyecto {result.project}, últimas entradas: "
+            f"{len(result.matched_entries)} de {result.total_entries} válidas."
+        )
+    elif result.view_name == "pending_enrichment":
+        header = (
+            f"Proyecto {result.project}, pendientes de enriquecer: "
+            f"{len(result.matched_entries)} entradas de {result.total_entries}."
+        )
+    elif result.view_name.startswith("summary_quality:"):
+        quality = result.view_name.split(":", 1)[1]
+        header = (
+            f"Proyecto {result.project}, calidad_resumen {quality}: "
+            f"{len(result.matched_entries)} entradas de {result.total_entries}."
+        )
+    else:
+        header = f"Proyecto {result.project}: {len(result.matched_entries)} entradas de {result.total_entries}."
+
+    lines = [header]
+    if result.matched_entries:
+        visible_entries = result.matched_entries[:max_entries]
+        if len(result.matched_entries) > max_entries:
+            lines.append(f"Mostrando {len(visible_entries)} de {len(result.matched_entries)} entradas.")
+        for entry in visible_entries:
+            lines.append(format_entry_summary(entry))
+    else:
+        lines.append("No hay entradas para mostrar.")
+
+    if result.warnings:
+        lines.append(f"Avisos de lectura: {len(result.warnings)}")
+        lines.extend(format_warning(warning) for warning in result.warnings)
+
+    return "\n".join(lines)
+
+
+def build_operational_view_output_human(result: OperationalViewResult, max_entries: int = 20) -> str:
+    project_label = humanize_project_name(result.project)
+    if result.view_name == "recent":
+        header = f"{project_label}, últimas entradas: {len(result.matched_entries)} de {result.total_entries}."
+        empty_line = "Todavía no hay entradas recientes que enseñar."
+    elif result.view_name == "pending_enrichment":
+        total = len(result.matched_entries)
+        noun = "entrada" if total == 1 else "entradas"
+        header = f"{project_label}, pendientes de enriquecer: {total} {noun}."
+        empty_line = "No tienes entradas pendientes de enriquecer."
+    elif result.view_name.startswith("summary_quality:"):
+        quality = result.view_name.split(":", 1)[1]
+        header = (
+            f"{project_label}, {humanize_summary_quality_label(quality)}: "
+            f"{len(result.matched_entries)} entradas."
+        )
+        empty_line = "No hay entradas que coincidan con esa calidad de resumen."
+    else:
+        header = f"{project_label}: {len(result.matched_entries)} entradas."
+        empty_line = "No he encontrado entradas para mostrar."
+
+    lines = [header]
+    if result.matched_entries:
+        visible_entries = result.matched_entries[:max_entries]
+        if len(result.matched_entries) > max_entries:
+            lines.append(f"Te enseño {len(visible_entries)} de {len(result.matched_entries)} entradas.")
+        for entry in visible_entries:
+            lines.append(format_entry_summary_human(entry))
+        if result.view_name == "pending_enrichment":
+            lines.append("Si quieres, puedo ayudarte a enriquecer una de estas entradas ahora.")
+    else:
+        lines.append(empty_line)
+
+    if result.warnings:
+        lines.append(f"Avisos de lectura: {len(result.warnings)}")
+        lines.extend(format_warning(warning) for warning in result.warnings)
+
+    return "\n".join(lines)
+
+
+def build_enrichment_reminder(project: str, data_dir: Path = DEFAULT_DATA_DIR, *, technical: bool = True, limit: int = 5) -> str:
+    result = list_pending_enrichment_entries(project=project, data_dir=data_dir)
+    if technical:
+        if not result.matched_entries:
+            return f"Recordatorio bitácora ({result.project}): no hay entradas pendientes de enriquecer."
+        titles = "; ".join(entry.titulo for entry in result.matched_entries[:max(limit, 1)])
+        return (
+            f"Recordatorio bitácora ({result.project}): {len(result.matched_entries)} entradas con "
+            f"calidad_resumen=fallback pendientes de enriquecer. {titles}"
+        )
+
+    project_label = humanize_project_name(result.project)
+    if not result.matched_entries:
+        return f"Hoy no tienes entradas pendientes de enriquecer en {project_label}."
+
+    visible_entries = result.matched_entries[: max(limit, 1)]
+    titles = "; ".join(entry.titulo for entry in visible_entries)
+    noun = "entrada" if len(result.matched_entries) == 1 else "entradas"
+    return (
+        f"Tienes {len(result.matched_entries)} {noun} pendientes de enriquecer en {project_label}: "
+        f"{titles}. Si quieres, retomamos una ahora."
+    )
+
+
+def build_daily_enrichment_reminder_job(project: str, *, session_target: str = "current") -> dict:
+    normalized_project = normalize_name(project)
+    return {
+        "name": f"bitacora-{normalized_project}-daily-reminder",
+        "schedule": {
+            "kind": "cron",
+            "expr": REMINDER_CRON_EXPRESSION,
+            "tz": REMINDER_TIMEZONE,
+        },
+        "sessionTarget": session_target,
+        "payload": {
+            "kind": "agentTurn",
+            "message": (
+                f"Revisa el proyecto {normalized_project} de bitácora. Si hay entradas con calidad_resumen: "
+                "fallback y estado distinto de descartado, envía un recordatorio breve y humano con las "
+                "pendientes más recientes. Si no hay pendientes, responde con un breve mensaje de que hoy no hay nada pendiente."
+            ),
+            "timeoutSeconds": 120,
+            "lightContext": True,
+        },
+        "delivery": {
+            "mode": "announce",
+        },
+    }
+
+
 def build_overview_sections_human(overview: ProjectOverviewResult) -> list[str]:
     lines: list[str] = []
 
@@ -894,24 +1142,45 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Leer, listar y buscar entradas de bitácora")
     parser.add_argument("--project", help="Nombre del proyecto")
     parser.add_argument("--category", help="Categoría exacta o variación menor")
+    parser.add_argument("--state", help="Filtrar por estado: nuevo, revisado, descartado")
     parser.add_argument("--search", help="Texto a buscar en título, resumen, tags y nota personal")
     parser.add_argument("--entry-id", help="Mostrar una entrada concreta por id")
+    parser.add_argument("--recent", type=int, help="Mostrar las últimas N entradas del proyecto")
+    parser.add_argument("--summary-quality", help="Filtrar por calidad_resumen: fallback, auto, usuario")
+    parser.add_argument("--pending-enrichment", action="store_true", help="Mostrar entradas con calidad_resumen fallback y no descartadas")
+    parser.add_argument("--reminder-preview", action="store_true", help="Mostrar el texto del recordatorio diario")
+    parser.add_argument("--reminder-job", action="store_true", help="Mostrar la configuración nativa del recordatorio diario en OpenClaw")
     parser.add_argument("--overview", action="store_true", help="Mostrar índices y estadísticas derivadas del proyecto")
     parser.add_argument("--global-stats", action="store_true", help="Mostrar estadísticas agregadas de todos los proyectos")
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
     args = parser.parse_args(argv)
+    exclusive_modes = [
+        bool(args.search),
+        bool(args.entry_id),
+        bool(args.recent is not None),
+        bool(args.summary_quality),
+        bool(args.pending_enrichment),
+        bool(args.reminder_preview),
+        bool(args.reminder_job),
+        bool(args.overview),
+    ]
     if args.category and args.search:
         parser.error("--category y --search no pueden usarse a la vez")
-    if args.entry_id and (args.category or args.search):
-        parser.error("--entry-id no puede combinarse con --category ni --search")
+    if args.entry_id and (args.category or args.search or args.state):
+        parser.error("--entry-id no puede combinarse con --category, --search ni --state")
     if args.global_stats and args.project:
         parser.error("--global-stats no puede combinarse con --project")
-    if args.global_stats and (args.category or args.search or args.entry_id or args.overview):
+    if args.global_stats and (
+        args.category or args.state or args.search or args.entry_id or args.overview or args.recent is not None
+        or args.summary_quality or args.pending_enrichment or args.reminder_preview or args.reminder_job
+    ):
         parser.error("--global-stats no puede combinarse con filtros ni con --overview")
-    if args.overview and (args.category or args.search or args.entry_id):
-        parser.error("--overview no puede combinarse con --category, --search ni --entry-id")
+    if sum(1 for mode in exclusive_modes if mode) > 1:
+        parser.error("Usa solo un modo principal por ejecución")
+    if args.overview and (args.category or args.search or args.entry_id or args.state):
+        parser.error("--overview no puede combinarse con --category, --search, --entry-id ni --state")
     if not args.global_stats and not args.project:
         parser.error("--project es obligatorio salvo con --global-stats")
     return args
@@ -924,6 +1193,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             result = build_global_stats(data_dir=Path(args.data_dir))
             output = build_global_stats_output_technical(result) if args.technical else build_global_stats_output_human(result)
             print(output)
+            return 0
+
+        if args.reminder_job:
+            print(json.dumps(build_daily_enrichment_reminder_job(args.project), ensure_ascii=False, indent=2))
+            return 0
+
+        if args.reminder_preview:
+            print(build_enrichment_reminder(args.project, Path(args.data_dir), technical=args.technical, limit=max(args.max_entries, 1)))
             return 0
 
         if args.entry_id:
@@ -944,10 +1221,37 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(build_search_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
             return 0
 
+        if args.recent is not None:
+            result = list_recent_entries(
+                project=args.project,
+                data_dir=Path(args.data_dir),
+                limit=max(args.recent, 0),
+            )
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            return 0
+
+        if args.summary_quality:
+            result = list_entries_by_summary_quality(
+                project=args.project,
+                quality=args.summary_quality,
+                data_dir=Path(args.data_dir),
+            )
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            return 0
+
+        if args.pending_enrichment:
+            result = list_pending_enrichment_entries(
+                project=args.project,
+                data_dir=Path(args.data_dir),
+            )
+            print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical))
+            return 0
+
         result = list_entries(
             project=args.project,
             data_dir=Path(args.data_dir),
             category=args.category,
+            state=args.state,
         )
         overview = build_project_overview(args.project, Path(args.data_dir)) if args.overview else None
     except Exception as exc:  # pragma: no cover

@@ -64,3 +64,10 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - ocultados los IDs en listados y búsquedas visibles, manteniendo la vista técnica detallada cuando se solicita
 - añadida humanización visible de proyectos, categorías y tipos sin modificar las claves internas almacenadas en YAML
 - materializados y ejecutados `test_phase11.py` y `test_phase12.py`, más regresión satisfactoria sobre `test_phase5.py`, `test_phase6.py`, `test_phase8.py` y `test_phase10.py`
+
+### 2026-04-10 19:25:18 CEST+0200 - Bloque 4 completado (Fases 13, 14, 15 y 17)
+- añadido soporte de estados funcionales en `save_entry.py` y `read_entries.py`, con actualización atómica de estado y listados filtrados por `nuevo`, `revisado` y `descartado`
+- añadidas vistas operativas de últimas entradas, entradas por `calidad_resumen` y pendientes de enriquecer, con salida humana orientada a reenganchar al usuario
+- materializada la configuración nativa del recordatorio diario de OpenClaw mediante `build_daily_enrichment_reminder_job()` y la previsualización del mensaje con `build_enrichment_reminder()`
+- ampliado el enriquecimiento de entradas existentes para acumular nota personal, fusionar tags sin duplicados y subir `calidad_resumen` a `usuario` cuando una entrada `fallback` se enriquece
+- añadidos y ejecutados `test_phase13.py`, `test_phase14.py`, `test_phase15.py` y `test_phase17.py`, más regresión satisfactoria sobre `test_phase1.py`, `test_phase2.py` y `test_phase4.py` a `test_phase12.py`
