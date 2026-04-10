@@ -63,3 +63,14 @@ REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: SÍ
 DESCRIPCIÓN: Se añadieron índices y estadísticas derivadas para navegación, tanto por proyecto como a nivel global, sin convertirlas en fuente de verdad ni tocar el formato histórico de las entradas. La validación autónoma confirma que guardar, listar, filtrar, buscar y deduplicar siguen funcionando tras la mejora.
 
+2026-04-10 15:54:32 CEST+0200
+FECHA: 2026-04-10 15:54:32 CEST+0200
+FASE: 7. Migracion al formato v0.2
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 9
+TESTS PASADOS: 9
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se implementó la migración atómica al formato v0.2, con backup obligatorio de camper.md, nuevo render YAML+Nota personal y compatibilidad de lectura durante la transición. Las 4 entradas legacy de camper.md quedaron migradas sin pérdida de campos y la lectura, el filtrado por categoría y la búsqueda siguen funcionando.
+

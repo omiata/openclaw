@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -11,7 +12,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 from urllib.parse import unquote, urlparse
 
 import yaml
@@ -20,6 +21,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = ROOT_DIR / "data"
 ENTRY_DELIMITER = "---entry---"
 VALID_TYPES = ("link", "video", "documento", "nota", "idea", "referencia")
+VALID_SUMMARY_QUALITY = ("fallback", "auto", "usuario")
+VALID_STATES = ("nuevo", "revisado", "descartado")
 VIDEO_HOSTS = ("youtube.com", "youtu.be", "vimeo.com")
 DOCUMENT_EXTENSIONS = (
     ".pdf",
@@ -35,6 +38,17 @@ DOCUMENT_EXTENSIONS = (
     ".rtf",
 )
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+LEGACY_SECTION_MARKERS = {
+    "**Título**": "titulo_markdown",
+    "**Resumen**": "resumen_markdown",
+    "**Fuente**": "fuente_markdown",
+    "**Tags**": "tags_markdown",
+    "**Nota adicional**": "contenido_adicional_markdown",
+    "**Contenido**": "contenido_markdown",
+}
+V2_SECTION_MARKERS = {
+    "**Nota personal**": "nota_personal",
+}
 
 
 @dataclass
@@ -46,10 +60,12 @@ class Entry:
     tipo: str
     titulo: str
     resumen: str
-    contenido: str
+    contenido: str = ""
     fuente: Optional[str] = None
     tags: tuple[str, ...] = ()
     contenido_adicional: Optional[str] = None
+    calidad_resumen: str = "fallback"
+    estado: str = "nuevo"
 
 
 @dataclass
@@ -57,6 +73,14 @@ class DuplicateMatch:
     duplicate_url: str
     entry: Entry
     file_path: Path
+
+
+@dataclass
+class MigrationResult:
+    project: str
+    file_path: Path
+    backup_path: Optional[Path]
+    migrated_entries: list[Entry]
 
 
 class DuplicateEntryError(ValueError):
@@ -161,6 +185,22 @@ def normalize_resource_type(resource_type: str) -> str:
         allowed = ", ".join(VALID_TYPES)
         raise ValueError(f"Tipo no soportado: {resource_type}. Tipos válidos: {allowed}")
     return normalized
+
+
+def normalize_summary_quality(value: Optional[str]) -> str:
+    candidate = normalize_name(value) if value else "fallback"
+    if candidate not in VALID_SUMMARY_QUALITY:
+        raise ValueError(
+            f"calidad_resumen no soportada: {value}. Valores válidos: {', '.join(VALID_SUMMARY_QUALITY)}"
+        )
+    return candidate
+
+
+def normalize_state(value: Optional[str]) -> str:
+    candidate = normalize_name(value) if value else "nuevo"
+    if candidate not in VALID_STATES:
+        raise ValueError(f"estado no soportado: {value}. Valores válidos: {', '.join(VALID_STATES)}")
+    return candidate
 
 
 def infer_type(content: str, source: Optional[str], explicit_type: Optional[str] = None) -> str:
@@ -275,6 +315,24 @@ def make_summary(
     return f"Relevante para {project}/{category}."
 
 
+def infer_summary_quality(
+    *,
+    explicit_summary: Optional[str],
+    source: Optional[str],
+    content: str,
+    additional_content: Optional[str],
+) -> str:
+    if normalize_optional_text(explicit_summary):
+        return "usuario"
+
+    for candidate in (additional_content, content, source):
+        normalized = normalize_optional_text(candidate)
+        if normalized and not is_plain_url(normalized):
+            return "auto"
+
+    return "fallback"
+
+
 def ensure_entry_has_material(
     content: str,
     source: Optional[str],
@@ -297,6 +355,8 @@ def generate_entry(
     source: Optional[str] = None,
     tags: Optional[Sequence[str]] = None,
     additional_content: Optional[str] = None,
+    quality_override: Optional[str] = None,
+    state: Optional[str] = None,
 ) -> Entry:
     ensure_entry_has_material(content, source, additional_content, title)
 
@@ -325,11 +385,21 @@ def generate_entry(
         additional_content=normalized_additional,
         explicit_summary=normalize_optional_text(summary),
     )
+    normalized_quality = normalize_summary_quality(
+        quality_override
+        or infer_summary_quality(
+            explicit_summary=summary,
+            source=normalized_source,
+            content=normalized_content,
+            additional_content=normalized_additional,
+        )
+    )
+    normalized_state = normalize_state(state)
 
     for field_name, value in (
         ("contenido", normalized_content),
         ("fuente", normalized_source),
-        ("contenido_adicional", normalized_additional),
+        ("nota_personal", normalized_additional),
         ("titulo", normalized_title),
         ("resumen", normalized_summary),
     ):
@@ -350,6 +420,8 @@ def generate_entry(
         fuente=normalized_source,
         tags=normalized_tags,
         contenido_adicional=normalized_additional,
+        calidad_resumen=normalized_quality,
+        estado=normalized_state,
     )
 
 
@@ -387,12 +459,15 @@ def render_frontmatter(entry: Entry) -> str:
         lines.append("tags:")
         for tag in entry.tags:
             lines.append(f'  - "{yaml_escape(tag)}"')
-    if entry.contenido_adicional:
-        lines.extend(render_yaml_string("contenido_adicional", entry.contenido_adicional))
+    lines.extend(render_yaml_string("calidad_resumen", entry.calidad_resumen))
+    lines.extend(render_yaml_string("estado", entry.estado))
     return "\n".join(lines)
 
 
 def render_entry(entry: Entry) -> str:
+    note = normalize_optional_text(entry.contenido_adicional)
+    ensure_no_entry_delimiter("nota_personal", note)
+
     body_lines = [
         ENTRY_DELIMITER,
         "",
@@ -400,22 +475,11 @@ def render_entry(entry: Entry) -> str:
         render_frontmatter(entry),
         "---",
         "",
-        "**Título**",
-        entry.titulo,
-        "",
-        "**Resumen**",
-        entry.resumen,
-        "",
+        "**Nota personal**",
     ]
-
-    if entry.fuente:
-        body_lines.extend(["**Fuente**", entry.fuente, ""])
-    if entry.tags:
-        body_lines.extend(["**Tags**", ", ".join(entry.tags), ""])
-    if entry.contenido_adicional:
-        body_lines.extend(["**Nota adicional**", entry.contenido_adicional, ""])
-
-    body_lines.extend(["**Contenido**", entry.contenido or "(sin contenido)", ""])
+    if note:
+        body_lines.append(note)
+    body_lines.append("")
     return "\n".join(body_lines)
 
 
@@ -444,21 +508,12 @@ def extract_frontmatter(block: str) -> tuple[dict, str]:
     return parsed, body
 
 
-SECTION_MARKERS = {
-    "**Título**": "titulo",
-    "**Resumen**": "resumen_markdown",
-    "**Fuente**": "fuente_markdown",
-    "**Tags**": "tags_markdown",
-    "**Nota adicional**": "contenido_adicional_markdown",
-    "**Contenido**": "contenido",
-}
-
-
 def parse_rendered_body(body: str) -> dict[str, str]:
     values: dict[str, list[str]] = {}
     current_key: Optional[str] = None
+    markers = {**LEGACY_SECTION_MARKERS, **V2_SECTION_MARKERS}
     for line in body.splitlines():
-        marker = SECTION_MARKERS.get(line.strip())
+        marker = markers.get(line.strip())
         if marker:
             current_key = marker
             values.setdefault(current_key, [])
@@ -470,9 +525,43 @@ def parse_rendered_body(body: str) -> dict[str, str]:
     return {key: normalize_text("\n".join(lines)) for key, lines in values.items()}
 
 
+def is_meaningful_note(candidate: Optional[str], *, source: Optional[str], title: str, summary: str) -> bool:
+    normalized = normalize_optional_text(candidate)
+    if not normalized:
+        return False
+    if source and normalized == normalize_text(source):
+        return False
+    if normalized == normalize_text(title):
+        return False
+    if normalized == normalize_text(summary):
+        return False
+    return True
+
+
 def entry_from_block(block: str) -> Entry:
     parsed, body = extract_frontmatter(block)
     sections = parse_rendered_body(body)
+
+    legacy_content = sections.get("contenido_markdown")
+    legacy_additional = sections.get("contenido_adicional_markdown")
+    note_personal = normalize_optional_text(
+        sections.get("nota_personal")
+        or legacy_additional
+        or parsed.get("contenido_adicional")
+    )
+
+    contenido = normalize_optional_text(legacy_content) or ""
+    if not note_personal and is_meaningful_note(
+        contenido,
+        source=str(parsed.get("fuente") or "").strip() or None,
+        title=str(parsed["titulo"]),
+        summary=str(parsed["resumen"]),
+    ):
+        note_personal = contenido
+
+    calidad_resumen = normalize_summary_quality(parsed.get("calidad_resumen") or "fallback")
+    estado = normalize_state(parsed.get("estado") or "nuevo")
+
     return Entry(
         entry_id=str(parsed["id"]),
         fecha=str(parsed["fecha"]),
@@ -481,14 +570,12 @@ def entry_from_block(block: str) -> Entry:
         tipo=str(parsed["tipo"]),
         titulo=str(parsed["titulo"]),
         resumen=str(parsed["resumen"]),
-        contenido=sections.get("contenido", ""),
+        contenido=contenido,
         fuente=str(parsed["fuente"]).strip() if parsed.get("fuente") not in (None, "") else None,
         tags=tuple(normalize_tags(parsed.get("tags"))),
-        contenido_adicional=(
-            str(parsed["contenido_adicional"]).strip()
-            if parsed.get("contenido_adicional") not in (None, "")
-            else None
-        ),
+        contenido_adicional=note_personal,
+        calidad_resumen=calidad_resumen,
+        estado=estado,
     )
 
 
@@ -502,7 +589,7 @@ def find_duplicate_url(file_path: Path, candidate_urls: Sequence[str]) -> Option
             entry = entry_from_block(block)
         except Exception:
             continue
-        existing_urls = set(extract_urls(entry.fuente, entry.contenido))
+        existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
         for candidate_url in candidate_urls:
             if candidate_url in existing_urls:
                 return DuplicateMatch(duplicate_url=candidate_url, entry=entry, file_path=file_path)
@@ -536,7 +623,7 @@ def append_entry(
     data_dir.mkdir(parents=True, exist_ok=True)
     file_path = data_dir / f"{entry.proyecto}.md"
 
-    duplicate_match = find_duplicate_url(file_path, extract_urls(entry.fuente, entry.contenido))
+    duplicate_match = find_duplicate_url(file_path, extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
     if duplicate_match:
         raise DuplicateEntryError(duplicate_match)
 
@@ -558,13 +645,13 @@ def append_entry(
 
 
 def build_confirmation(entry: Entry, file_path: Path) -> str:
-    extras: list[str] = []
+    extras: list[str] = [f"calidad_resumen={entry.calidad_resumen}", f"estado={entry.estado}"]
     if entry.fuente:
         extras.append("con fuente")
     if entry.tags:
         extras.append(f"{len(entry.tags)} tags")
     if entry.contenido_adicional:
-        extras.append("con nota adicional")
+        extras.append("con nota personal")
     suffix = f" [{', '.join(extras)}]" if extras else ""
     return (
         f"Guardado correctamente en {entry.proyecto}/{entry.categoria}: {entry.titulo} ({entry.tipo})"
@@ -572,12 +659,86 @@ def build_confirmation(entry: Entry, file_path: Path) -> str:
     )
 
 
-def atomic_write(file_path: Path, content: str) -> None:
+def atomic_write(
+    file_path: Path,
+    content: str,
+    *,
+    before_replace: Optional[Callable[[Path], None]] = None,
+) -> None:
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=file_path.parent, delete=False) as handle:
-        handle.write(content)
-        temp_path = Path(handle.name)
-    temp_path.replace(file_path)
+    temp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=file_path.parent, delete=False) as handle:
+            handle.write(content)
+            temp_path = Path(handle.name)
+        if before_replace is not None:
+            before_replace(temp_path)
+        temp_path.replace(file_path)
+        temp_path = None
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def backup_project_file(file_path: Path) -> Path:
+    backup_path = file_path.with_name(f"{file_path.name}.bak")
+    backup_path.write_text(file_path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    return backup_path
+
+
+def migrate_entry_to_v0_2(entry: Entry) -> Entry:
+    return Entry(
+        entry_id=entry.entry_id,
+        fecha=entry.fecha,
+        proyecto=entry.proyecto,
+        categoria=entry.categoria,
+        tipo=entry.tipo,
+        titulo=entry.titulo,
+        resumen=entry.resumen,
+        contenido=entry.contenido,
+        fuente=entry.fuente,
+        tags=entry.tags,
+        contenido_adicional=entry.contenido_adicional,
+        calidad_resumen=normalize_summary_quality(entry.calidad_resumen or "fallback"),
+        estado=normalize_state(entry.estado or "nuevo"),
+    )
+
+
+def build_project_content(entries: Sequence[Entry]) -> str:
+    rendered_entries = [render_entry(entry) for entry in entries]
+    final_content = "\n".join(rendered_entries)
+    if final_content and not final_content.endswith("\n"):
+        final_content += "\n"
+    return final_content
+
+
+def migrate_project_file(
+    project: str,
+    data_dir: Path = DEFAULT_DATA_DIR,
+    *,
+    create_backup: bool = True,
+    before_replace: Optional[Callable[[Path], None]] = None,
+) -> MigrationResult:
+    normalized_project = normalize_name(project)
+    file_path = data_dir / f"{normalized_project}.md"
+    if not file_path.exists():
+        raise ValueError(f"No existe el archivo del proyecto {normalized_project}: {file_path}")
+
+    original_content = file_path.read_text(encoding="utf-8")
+    raw_blocks = split_entry_blocks(original_content)
+    if not raw_blocks:
+        raise ValueError(f"El archivo del proyecto {normalized_project} está vacío; no hay entradas que migrar")
+
+    migrated_entries = [migrate_entry_to_v0_2(entry_from_block(block)) for block in raw_blocks]
+    backup_path = backup_project_file(file_path) if create_backup else None
+    final_content = build_project_content(migrated_entries)
+    atomic_write(file_path, final_content, before_replace=before_replace)
+    return MigrationResult(
+        project=normalized_project,
+        file_path=file_path,
+        backup_path=backup_path,
+        migrated_entries=migrated_entries,
+    )
 
 
 def update_existing_entry(
@@ -608,7 +769,7 @@ def update_existing_entry(
 
     for block in raw_blocks:
         entry = entry_from_block(block)
-        existing_urls = set(extract_urls(entry.fuente, entry.contenido))
+        existing_urls = set(extract_urls(entry.fuente, entry.contenido, entry.contenido_adicional))
         is_target = (entry_id and entry.entry_id == entry_id.strip()) or (source_url and source_url.strip() in existing_urls)
         if not is_target:
             updated_blocks.append(render_entry(entry))
@@ -618,6 +779,12 @@ def update_existing_entry(
         if normalized_new_tags:
             merged_tags = normalize_tags([*entry.tags, *normalized_new_tags])
 
+        new_summary = normalized_summary or entry.resumen
+        new_note = normalized_additional if normalized_additional is not None else entry.contenido_adicional
+        updated_quality = entry.calidad_resumen
+        if normalized_summary is not None:
+            updated_quality = "usuario"
+
         updated_entry = Entry(
             entry_id=entry.entry_id,
             fecha=entry.fecha,
@@ -625,11 +792,13 @@ def update_existing_entry(
             categoria=entry.categoria,
             tipo=entry.tipo,
             titulo=entry.titulo,
-            resumen=normalized_summary or entry.resumen,
+            resumen=new_summary,
             contenido=entry.contenido,
             fuente=entry.fuente,
             tags=merged_tags,
-            contenido_adicional=(normalized_additional if normalized_additional is not None else entry.contenido_adicional),
+            contenido_adicional=new_note,
+            calidad_resumen=updated_quality,
+            estado=entry.estado,
         )
         updated_blocks.append(render_entry(updated_entry))
 
@@ -649,15 +818,23 @@ def build_update_confirmation(entry: Entry, file_path: Path) -> str:
     if entry.tags:
         changes.append(f"tags={', '.join(entry.tags)}")
     if entry.contenido_adicional:
-        changes.append("nota actualizada")
+        changes.append("nota personal actualizada")
     if entry.resumen:
-        changes.append("resumen disponible")
+        changes.append(f"calidad_resumen={entry.calidad_resumen}")
     details = f" ({'; '.join(changes)})" if changes else ""
     return f"Entrada actualizada sin duplicar: id={entry.entry_id} en {file_path}{details}"
 
 
+def build_migration_confirmation(result: MigrationResult) -> str:
+    backup_text = f" backup={result.backup_path}" if result.backup_path else ""
+    return (
+        f"Migración v0.2 completada para {result.project}: {len(result.migrated_entries)} entradas."
+        f" archivo={result.file_path}{backup_text}"
+    )
+
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Guardar o actualizar una entrada de bitácora")
+    parser = argparse.ArgumentParser(description="Guardar, actualizar o migrar entradas de bitácora")
     parser.add_argument("--project", required=True, help="Nombre del proyecto")
     parser.add_argument("--category", help="Categoría de la entrada al guardar")
     parser.add_argument("--content", default="", help="Contenido o recurso del usuario")
@@ -669,6 +846,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--additional-content", help="Nota libre adicional del usuario")
     parser.add_argument("--update-entry-id", help="Actualizar una entrada existente por id")
     parser.add_argument("--update-source-url", help="Actualizar una entrada existente localizándola por URL exacta")
+    parser.add_argument("--migrate-project", action="store_true", help="Migrar el archivo del proyecto al formato v0.2")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     return parser.parse_args(argv)
 
@@ -679,6 +857,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     update_mode = bool(args.update_entry_id or args.update_source_url)
 
     try:
+        if args.migrate_project:
+            result = migrate_project_file(project=args.project, data_dir=data_dir, create_backup=True)
+            print(build_migration_confirmation(result))
+            return 0
+
         if update_mode:
             entry, file_path = update_existing_entry(
                 project=args.project,

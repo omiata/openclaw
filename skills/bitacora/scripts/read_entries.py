@@ -11,11 +11,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import yaml
+from save_entry import DEFAULT_DATA_DIR, ENTRY_DELIMITER, ascii_fold, entry_from_block, normalize_name
 
-from save_entry import DEFAULT_DATA_DIR, ENTRY_DELIMITER, ascii_fold, normalize_name
-
-REQUIRED_FIELDS = ("id", "fecha", "proyecto", "categoria", "tipo", "titulo", "resumen")
+REQUIRED_FIELDS = (
+    "id",
+    "fecha",
+    "proyecto",
+    "categoria",
+    "tipo",
+    "titulo",
+    "resumen",
+    "calidad_resumen",
+    "estado",
+)
 SEARCHABLE_FIELDS = ("titulo", "resumen", "tags", "contenido_adicional")
 
 
@@ -41,6 +49,8 @@ class StoredEntry:
     fuente: Optional[str] = None
     tags: list[str] = field(default_factory=list)
     contenido_adicional: Optional[str] = None
+    calidad_resumen: str = "fallback"
+    estado: str = "nuevo"
 
 
 @dataclass
@@ -153,71 +163,33 @@ def split_entry_blocks(content: str) -> list[tuple[int, str]]:
     return blocks
 
 
-def extract_frontmatter(block: str) -> tuple[str, str]:
-    lines = block.splitlines()
-    if not lines or lines[0].strip() != "---":
-        raise ValueError("El bloque no empieza con frontmatter YAML")
-
-    end_index = None
-    for index in range(1, len(lines)):
-        if lines[index].strip() == "---":
-            end_index = index
-            break
-
-    if end_index is None:
-        raise ValueError("No se encontró cierre del frontmatter YAML")
-
-    yaml_text = "\n".join(lines[1:end_index])
-    body = "\n".join(lines[end_index + 1 :]).strip()
-    return yaml_text, body
-
-
-def parse_tags(raw_tags: object) -> list[str]:
-    if raw_tags is None:
-        return []
-    if isinstance(raw_tags, str):
-        candidate = raw_tags.strip()
-        return [candidate] if candidate else []
-    if isinstance(raw_tags, list):
-        normalized: list[str] = []
-        for item in raw_tags:
-            if item is None:
-                continue
-            candidate = str(item).strip()
-            if candidate:
-                normalized.append(candidate)
-        return normalized
-    raise ValueError("El campo tags debe ser una lista o string")
-
-
 def parse_entry_block(block: str, position: int, source_path: Path) -> StoredEntry:
-    yaml_text, body = extract_frontmatter(block)
-    parsed = yaml.safe_load(yaml_text)
-    if not isinstance(parsed, dict):
-        raise ValueError("El YAML no se parseó como mapa")
+    entry = entry_from_block(block)
 
-    missing_fields = [field for field in REQUIRED_FIELDS if field not in parsed or parsed[field] in (None, "")]
+    missing_fields = [
+        field
+        for field in REQUIRED_FIELDS
+        if getattr(entry, "entry_id" if field == "id" else field, None) in (None, "")
+    ]
     if missing_fields:
         raise ValueError(f"Faltan campos obligatorios: {', '.join(missing_fields)}")
 
     return StoredEntry(
-        entry_id=str(parsed["id"]),
-        fecha=str(parsed["fecha"]),
-        proyecto=str(parsed["proyecto"]),
-        categoria=str(parsed["categoria"]),
-        tipo=str(parsed["tipo"]),
-        titulo=str(parsed["titulo"]),
-        resumen=str(parsed["resumen"]),
-        contenido=body,
+        entry_id=entry.entry_id,
+        fecha=entry.fecha,
+        proyecto=entry.proyecto,
+        categoria=entry.categoria,
+        tipo=entry.tipo,
+        titulo=entry.titulo,
+        resumen=entry.resumen,
+        contenido=entry.contenido,
         source_path=source_path,
         position=position,
-        fuente=str(parsed["fuente"]).strip() if parsed.get("fuente") not in (None, "") else None,
-        tags=parse_tags(parsed.get("tags")),
-        contenido_adicional=(
-            str(parsed["contenido_adicional"]).strip()
-            if parsed.get("contenido_adicional") not in (None, "")
-            else None
-        ),
+        fuente=entry.fuente,
+        tags=list(entry.tags),
+        contenido_adicional=entry.contenido_adicional,
+        calidad_resumen=entry.calidad_resumen,
+        estado=entry.estado,
     )
 
 
@@ -478,6 +450,7 @@ def format_entry_summary(entry: StoredEntry) -> str:
         f"- {entry.titulo}",
         f"  id: {entry.entry_id}",
         f"  categoría: {entry.categoria} | tipo: {entry.tipo} | fecha: {entry.fecha}",
+        f"  estado: {entry.estado} | calidad_resumen: {entry.calidad_resumen}",
         f"  resumen: {entry.resumen}",
     ]
     if entry.fuente:
@@ -505,6 +478,8 @@ def format_entry_full(entry: StoredEntry) -> str:
         f"Categoría: {entry.categoria}",
         f"Tipo: {entry.tipo}",
         f"Fecha: {entry.fecha}",
+        f"Estado: {entry.estado}",
+        f"Calidad resumen: {entry.calidad_resumen}",
         f"Título: {entry.titulo}",
         f"Resumen: {entry.resumen}",
     ]
@@ -513,9 +488,8 @@ def format_entry_full(entry: StoredEntry) -> str:
     if entry.tags:
         lines.append(f"Tags: {', '.join(entry.tags)}")
     if entry.contenido_adicional:
-        lines.append(f"Nota adicional: {entry.contenido_adicional}")
-    lines.append("Contenido:")
-    lines.append(entry.contenido or "(sin contenido)")
+        lines.append("Nota personal:")
+        lines.append(entry.contenido_adicional)
     return "\n".join(lines)
 
 
@@ -678,7 +652,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Leer, listar y buscar entradas de bitácora")
     parser.add_argument("--project", help="Nombre del proyecto")
     parser.add_argument("--category", help="Categoría exacta o variación menor")
-    parser.add_argument("--search", help="Texto a buscar en título, resumen, tags y contenido adicional")
+    parser.add_argument("--search", help="Texto a buscar en título, resumen, tags y nota personal")
     parser.add_argument("--entry-id", help="Mostrar una entrada concreta por id")
     parser.add_argument("--overview", action="store_true", help="Mostrar índices y estadísticas derivadas del proyecto")
     parser.add_argument("--global-stats", action="store_true", help="Mostrar estadísticas agregadas de todos los proyectos")
