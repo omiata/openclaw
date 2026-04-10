@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from html import unescape
 import os
 import re
 import shutil
@@ -13,7 +14,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
-from urllib.parse import unquote, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote_plus, unquote, urlparse
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -24,6 +27,9 @@ VALID_TYPES = ("link", "video", "documento", "nota", "idea", "referencia")
 VALID_SUMMARY_QUALITY = ("fallback", "auto", "usuario")
 VALID_STATES = ("nuevo", "revisado", "descartado")
 VIDEO_HOSTS = ("youtube.com", "youtu.be", "vimeo.com")
+YOUTUBE_HOSTS = ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be")
+VIMEO_HOSTS = ("vimeo.com", "www.vimeo.com", "player.vimeo.com")
+EXTERNAL_METADATA_TIMEOUT_SECONDS = 3.0
 DOCUMENT_EXTENSIONS = (
     ".pdf",
     ".doc",
@@ -49,6 +55,24 @@ LEGACY_SECTION_MARKERS = {
 V2_SECTION_MARKERS = {
     "**Nota personal**": "nota_personal",
 }
+DEFAULT_PROJECT_CATEGORIES = {
+    "camper": (
+        "aislamiento",
+        "cama",
+        "distribucion",
+        "almacenamiento",
+        "electricidad",
+        "iluminacion",
+        "ventilacion",
+        "cocina",
+        "agua",
+        "moto",
+        "fijaciones-estructura",
+        "homologacion",
+        "herramientas-materiales",
+        "ideas-generales",
+    ),
+}
 
 
 @dataclass
@@ -66,6 +90,23 @@ class Entry:
     contenido_adicional: Optional[str] = None
     calidad_resumen: str = "fallback"
     estado: str = "nuevo"
+
+
+@dataclass
+class ExternalMetadata:
+    title: Optional[str] = None
+    description: Optional[str] = None
+    source_kind: Optional[str] = None
+    resolved_url: Optional[str] = None
+
+
+@dataclass
+class CaptureOutcome:
+    status: str
+    prompt: str
+    entry: Optional[Entry] = None
+    file_path: Optional[Path] = None
+    suggested_categories: tuple[str, ...] = ()
 
 
 @dataclass
@@ -121,6 +162,36 @@ def normalize_optional_text(value: Optional[str]) -> Optional[str]:
         return None
     normalized = normalize_text(value)
     return normalized or None
+
+
+def is_useful_free_text(value: Optional[str]) -> bool:
+    normalized = normalize_optional_text(value)
+    return bool(normalized and not is_plain_url(normalized))
+
+
+def clean_summary_text(value: str, *, max_lines: int = 3, max_length: int = 160) -> Optional[str]:
+    normalized = normalize_optional_text(value)
+    if not normalized:
+        return None
+
+    cleaned_lines: list[str] = []
+    seen: set[str] = set()
+    for line in normalized.splitlines():
+        compact = shorten_line(line, max_length)
+        if not compact:
+            continue
+        key = compact.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned_lines.append(compact)
+        if len(cleaned_lines) >= max_lines:
+            break
+
+    if not cleaned_lines:
+        compact = shorten_line(normalized, max_length)
+        return compact or None
+    return "\n".join(cleaned_lines)
 
 
 def ensure_no_entry_delimiter(field_name: str, value: Optional[str]) -> None:
@@ -242,6 +313,220 @@ def derive_title_from_url(url: str) -> str:
     return shorten_line(domain, 90)
 
 
+def normalize_metadata_title(value: Optional[str]) -> Optional[str]:
+    normalized = normalize_optional_text(value)
+    if not normalized or is_plain_url(normalized):
+        return None
+    return shorten_line(normalized, 90) or None
+
+
+def normalize_metadata_description(value: Optional[str]) -> Optional[str]:
+    normalized = normalize_optional_text(value)
+    if not normalized or is_plain_url(normalized):
+        return None
+    return clean_summary_text(normalized, max_lines=2, max_length=160)
+
+
+def merge_metadata(*items: Optional[ExternalMetadata]) -> Optional[ExternalMetadata]:
+    merged_title: Optional[str] = None
+    merged_description: Optional[str] = None
+    merged_source: Optional[str] = None
+    merged_url: Optional[str] = None
+
+    for item in items:
+        if item is None:
+            continue
+        if merged_title is None and item.title:
+            merged_title = normalize_metadata_title(item.title)
+        if merged_description is None and item.description:
+            merged_description = normalize_metadata_description(item.description)
+        if merged_source is None and item.source_kind:
+            merged_source = item.source_kind
+        if merged_url is None and item.resolved_url:
+            merged_url = item.resolved_url
+
+    if not any((merged_title, merged_description, merged_source, merged_url)):
+        return None
+    return ExternalMetadata(
+        title=merged_title,
+        description=merged_description,
+        source_kind=merged_source,
+        resolved_url=merged_url,
+    )
+
+
+def parse_html_metadata(html_text: str, url: str) -> Optional[ExternalMetadata]:
+    def find_meta(*patterns: str) -> Optional[str]:
+        for pattern in patterns:
+            match = re.search(pattern, html_text, re.IGNORECASE | re.DOTALL)
+            if match:
+                return normalize_optional_text(unescape(match.group(1)))
+        return None
+
+    title = find_meta(
+        r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+    )
+    description = find_meta(
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']',
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']',
+    )
+
+    if title is None:
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            title = normalize_optional_text(unescape(title_match.group(1)))
+
+    metadata = merge_metadata(
+        ExternalMetadata(
+            title=title,
+            description=description,
+            source_kind="html",
+            resolved_url=url,
+        )
+    )
+    return metadata
+
+
+def fetch_url_text(url: str, timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS) -> str:
+    request = Request(url, headers={"User-Agent": "bitacora/0.2"})
+    with urlopen(request, timeout=timeout_seconds) as response:
+        payload = response.read(512_000)
+        charset = response.headers.get_content_charset() or "utf-8"
+    return payload.decode(charset, errors="replace")
+
+
+def fetch_json_metadata(url: str, timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS) -> dict:
+    request = Request(url, headers={"User-Agent": "bitacora/0.2", "Accept": "application/json"})
+    with urlopen(request, timeout=timeout_seconds) as response:
+        payload = response.read(256_000)
+        charset = response.headers.get_content_charset() or "utf-8"
+    loaded = yaml.safe_load(payload.decode(charset, errors="replace"))
+    if not isinstance(loaded, dict):
+        raise ValueError("La respuesta de metadata externa no es un objeto JSON válido")
+    return loaded
+
+
+def build_oembed_url(url: str) -> Optional[str]:
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    if host in YOUTUBE_HOSTS:
+        return f"https://www.youtube.com/oembed?format=json&url={quote_plus(url)}"
+    if host in VIMEO_HOSTS:
+        return f"https://vimeo.com/api/oembed.json?url={quote_plus(url)}"
+    return None
+
+
+def extract_external_metadata(
+    url: str,
+    timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
+    *,
+    fetch_text: Optional[Callable[[str, float], str]] = None,
+    fetch_json: Optional[Callable[[str, float], dict]] = None,
+) -> Optional[ExternalMetadata]:
+    if not normalize_optional_text(url):
+        return None
+
+    fetch_text = fetch_text or fetch_url_text
+    fetch_json = fetch_json or fetch_json_metadata
+    oembed_metadata: Optional[ExternalMetadata] = None
+
+    try:
+        oembed_url = build_oembed_url(url)
+        if oembed_url:
+            raw = fetch_json(oembed_url, timeout_seconds)
+            oembed_metadata = merge_metadata(
+                ExternalMetadata(
+                    title=raw.get("title"),
+                    description=raw.get("description") or raw.get("summary"),
+                    source_kind="oembed",
+                    resolved_url=url,
+                )
+            )
+    except (TimeoutError, HTTPError, URLError, ValueError):
+        oembed_metadata = None
+    except Exception:
+        oembed_metadata = None
+
+    try:
+        html_text = fetch_text(url, timeout_seconds)
+        html_metadata = parse_html_metadata(html_text, url)
+    except (TimeoutError, HTTPError, URLError, ValueError):
+        html_metadata = None
+    except Exception:
+        html_metadata = None
+
+    return merge_metadata(oembed_metadata, html_metadata)
+
+
+def resolve_external_metadata(
+    url: Optional[str],
+    metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]],
+    timeout_seconds: float,
+) -> Optional[ExternalMetadata]:
+    normalized_url = normalize_optional_text(url)
+    if not normalized_url:
+        return None
+    try:
+        if metadata_fetcher is not None:
+            return merge_metadata(metadata_fetcher(normalized_url, timeout_seconds))
+        return extract_external_metadata(normalized_url, timeout_seconds)
+    except Exception:
+        return None
+
+
+def build_metadata_summary(
+    metadata: ExternalMetadata,
+    *,
+    project: str,
+    category: str,
+    source_url: Optional[str],
+) -> Optional[str]:
+    host = urlparse(source_url).netloc if source_url else ""
+    if metadata.description:
+        suffix = f"Guardado desde {host} para {project}/{category}." if host else f"Guardado para {project}/{category}."
+        return clean_summary_text(f"{metadata.description}\n{suffix}")
+    if metadata.title:
+        if host:
+            return clean_summary_text(
+                f'Recurso titulado "{metadata.title}" guardado desde {host} para {project}/{category}. Pendiente de revisar.'
+            )
+        return clean_summary_text(
+            f'Recurso titulado "{metadata.title}" guardado para {project}/{category}. Pendiente de revisar.'
+        )
+    return None
+
+
+def build_free_text_summary(
+    text: str,
+    *,
+    project: str,
+    category: str,
+    title: str,
+) -> Optional[str]:
+    summary = clean_summary_text(text)
+    if not summary:
+        return None
+    summary_lines = summary.splitlines()
+    if len(summary_lines) < 3:
+        relevance = f"Guardado para {project}/{category}."
+        if all(line.lower() != relevance.lower() for line in summary_lines):
+            summary_lines.append(relevance)
+    compact = "\n".join(summary_lines[:3])
+    if normalize_text(compact).lower() == normalize_text(title).lower():
+        return None
+    return compact
+
+
+def build_fallback_summary(project: str, category: str, source_url: Optional[str]) -> str:
+    host = urlparse(source_url).netloc if source_url else ""
+    if host:
+        return f"Recurso guardado desde {host} para {project}/{category}. Pendiente de revisar."
+    return f"Entrada guardada para {project}/{category}. Pendiente de enriquecer."
+
+
 def make_title(
     content: str,
     source: Optional[str],
@@ -249,9 +534,15 @@ def make_title(
     explicit_title: Optional[str],
     resource_type: str,
     category: str,
+    external_metadata: Optional[ExternalMetadata] = None,
 ) -> str:
     if explicit_title:
         title = shorten_line(explicit_title, 90)
+        if title:
+            return title
+
+    if external_metadata and external_metadata.title:
+        title = shorten_line(external_metadata.title, 90)
         if title:
             return title
 
@@ -276,61 +567,29 @@ def make_summary(
     source: Optional[str],
     additional_content: Optional[str],
     explicit_summary: Optional[str],
-) -> str:
-    if explicit_summary:
-        summary_lines = [shorten_line(line, 160) for line in normalize_text(explicit_summary).splitlines() if line.strip()]
-        summary_lines = [line for line in summary_lines if line]
-        if summary_lines:
-            return "\n".join(summary_lines[:3])
+    external_metadata: Optional[ExternalMetadata],
+) -> tuple[str, str]:
+    user_summary = clean_summary_text(explicit_summary or "") if explicit_summary else None
+    if user_summary:
+        return user_summary, "usuario"
 
-    lines: list[str] = []
-
-    for candidate in (content, additional_content, source):
-        if candidate and not is_plain_url(candidate):
-            snippet = shorten_line(candidate, 160)
-            if snippet and snippet.lower() != title.lower():
-                lines.append(snippet)
-                break
-
-    url = extract_first_url(source, content)
-    if url:
-        host = urlparse(url).netloc or url
-        lines.append(f"Fuente: {host}.")
-
-    lines.append(f"Relevante para {project}/{category}.")
-
-    cleaned_lines: list[str] = []
-    seen: set[str] = set()
-    for line in lines:
-        clean = shorten_line(line, 160)
-        key = clean.lower()
-        if clean and key not in seen:
-            seen.add(key)
-            cleaned_lines.append(clean)
-        if len(cleaned_lines) == 3:
-            break
-
-    if cleaned_lines:
-        return "\n".join(cleaned_lines)
-    return f"Relevante para {project}/{category}."
-
-
-def infer_summary_quality(
-    *,
-    explicit_summary: Optional[str],
-    source: Optional[str],
-    content: str,
-    additional_content: Optional[str],
-) -> str:
-    if normalize_optional_text(explicit_summary):
-        return "usuario"
+    metadata_summary = build_metadata_summary(
+        external_metadata,
+        project=project,
+        category=category,
+        source_url=extract_first_url(source, content),
+    ) if external_metadata else None
+    if metadata_summary:
+        return metadata_summary, "auto"
 
     for candidate in (additional_content, content, source):
-        normalized = normalize_optional_text(candidate)
-        if normalized and not is_plain_url(normalized):
-            return "auto"
+        if is_useful_free_text(candidate):
+            free_text_summary = build_free_text_summary(candidate or "", project=project, category=category, title=title)
+            if free_text_summary:
+                return free_text_summary, "auto"
 
-    return "fallback"
+    source_url = extract_first_url(source, content)
+    return build_fallback_summary(project, category, source_url), "fallback"
 
 
 def ensure_entry_has_material(
@@ -357,6 +616,8 @@ def generate_entry(
     additional_content: Optional[str] = None,
     quality_override: Optional[str] = None,
     state: Optional[str] = None,
+    metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]] = None,
+    metadata_timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
 ) -> Entry:
     ensure_entry_has_material(content, source, additional_content, title)
 
@@ -368,6 +629,12 @@ def generate_entry(
     normalized_additional = normalize_optional_text(additional_content)
     normalized_tags = normalize_tags(tags)
     normalized_type = infer_type(normalized_content, normalized_source, resource_type)
+    source_url = extract_first_url(normalized_source, normalized_content)
+    external_metadata = resolve_external_metadata(
+        source_url,
+        metadata_fetcher=metadata_fetcher,
+        timeout_seconds=metadata_timeout_seconds,
+    )
     normalized_title = make_title(
         content=normalized_content,
         source=normalized_source,
@@ -375,8 +642,9 @@ def generate_entry(
         explicit_title=normalize_optional_text(title),
         resource_type=normalized_type,
         category=normalized_category,
+        external_metadata=external_metadata,
     )
-    normalized_summary = make_summary(
+    normalized_summary, inferred_quality = make_summary(
         project=normalized_project,
         category=normalized_category,
         title=normalized_title,
@@ -384,16 +652,9 @@ def generate_entry(
         source=normalized_source,
         additional_content=normalized_additional,
         explicit_summary=normalize_optional_text(summary),
+        external_metadata=external_metadata,
     )
-    normalized_quality = normalize_summary_quality(
-        quality_override
-        or infer_summary_quality(
-            explicit_summary=summary,
-            source=normalized_source,
-            content=normalized_content,
-            additional_content=normalized_additional,
-        )
-    )
+    normalized_quality = normalize_summary_quality(quality_override or inferred_quality)
     normalized_state = normalize_state(state)
 
     for field_name, value in (
@@ -579,6 +840,100 @@ def entry_from_block(block: str) -> Entry:
     )
 
 
+def load_project_entries_for_capture(project: str, data_dir: Path = DEFAULT_DATA_DIR) -> list[Entry]:
+    file_path = data_dir / f"{normalize_name(project)}.md"
+    if not file_path.exists():
+        return []
+
+    entries: list[Entry] = []
+    content = file_path.read_text(encoding="utf-8")
+    for block in split_entry_blocks(content):
+        try:
+            entries.append(entry_from_block(block))
+        except Exception:
+            continue
+    return entries
+
+
+def suggest_categories_for_project(project: str, data_dir: Path = DEFAULT_DATA_DIR, limit: int = 5) -> tuple[str, ...]:
+    normalized_project = normalize_name(project)
+    entries = load_project_entries_for_capture(normalized_project, data_dir=data_dir)
+
+    counters: dict[str, int] = {}
+    for entry in entries:
+        counters[entry.categoria] = counters.get(entry.categoria, 0) + 1
+
+    ordered = [
+        category
+        for category, _count in sorted(counters.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+    for default_category in DEFAULT_PROJECT_CATEGORIES.get(normalized_project, ()):
+        if default_category not in ordered:
+            ordered.append(default_category)
+
+    return tuple(ordered[:limit])
+
+
+def build_missing_project_prompt() -> str:
+    return "¿En qué proyecto guardo esto?"
+
+
+def build_missing_category_prompt(project: str, suggestions: Sequence[str]) -> str:
+    normalized_project = normalize_name(project)
+    if suggestions:
+        return (
+            f"¿Qué categoría le pongo en {normalized_project}? "
+            f"Puedes usar una de estas: {', '.join(suggestions)}."
+        )
+    return f"¿Qué categoría le pongo en {normalized_project}?"
+
+
+def capture_entry(
+    *,
+    project: Optional[str],
+    category: Optional[str],
+    content: str = "",
+    data_dir: Path = DEFAULT_DATA_DIR,
+    resource_type: Optional[str] = None,
+    title: Optional[str] = None,
+    summary: Optional[str] = None,
+    source: Optional[str] = None,
+    tags: Optional[Sequence[str]] = None,
+    additional_content: Optional[str] = None,
+    metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]] = None,
+    metadata_timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
+) -> CaptureOutcome:
+    normalized_project = normalize_optional_text(project)
+    if not normalized_project:
+        return CaptureOutcome(status="needs_project", prompt=build_missing_project_prompt())
+
+    normalized_category = normalize_optional_text(category)
+    if not normalized_category:
+        suggestions = suggest_categories_for_project(normalized_project, data_dir=data_dir)
+        return CaptureOutcome(
+            status="needs_category",
+            prompt=build_missing_category_prompt(normalized_project, suggestions),
+            suggested_categories=suggestions,
+        )
+
+    entry, file_path = append_entry(
+        project=normalized_project,
+        category=normalized_category,
+        content=content,
+        data_dir=data_dir,
+        resource_type=resource_type,
+        title=title,
+        summary=summary,
+        source=source,
+        tags=tags,
+        additional_content=additional_content,
+        metadata_fetcher=metadata_fetcher,
+        metadata_timeout_seconds=metadata_timeout_seconds,
+    )
+    return CaptureOutcome(status="saved", prompt=build_confirmation(entry, file_path), entry=entry, file_path=file_path)
+
+
 def find_duplicate_url(file_path: Path, candidate_urls: Sequence[str]) -> Optional[DuplicateMatch]:
     if not candidate_urls or not file_path.exists():
         return None
@@ -608,6 +963,8 @@ def append_entry(
     source: Optional[str] = None,
     tags: Optional[Sequence[str]] = None,
     additional_content: Optional[str] = None,
+    metadata_fetcher: Optional[Callable[[str, float], Optional[ExternalMetadata]]] = None,
+    metadata_timeout_seconds: float = EXTERNAL_METADATA_TIMEOUT_SECONDS,
 ) -> tuple[Entry, Path]:
     entry = generate_entry(
         project=project,
@@ -619,6 +976,8 @@ def append_entry(
         source=source,
         tags=tags,
         additional_content=additional_content,
+        metadata_fetcher=metadata_fetcher,
+        metadata_timeout_seconds=metadata_timeout_seconds,
     )
     data_dir.mkdir(parents=True, exist_ok=True)
     file_path = data_dir / f"{entry.proyecto}.md"
@@ -835,7 +1194,7 @@ def build_migration_confirmation(result: MigrationResult) -> str:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Guardar, actualizar o migrar entradas de bitácora")
-    parser.add_argument("--project", required=True, help="Nombre del proyecto")
+    parser.add_argument("--project", help="Nombre del proyecto")
     parser.add_argument("--category", help="Categoría de la entrada al guardar")
     parser.add_argument("--content", default="", help="Contenido o recurso del usuario")
     parser.add_argument("--type", dest="resource_type", help="Tipo explícito: link, video, documento, nota, idea, referencia")
@@ -858,11 +1217,15 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         if args.migrate_project:
+            if not args.project:
+                raise ValueError("--project es obligatorio al migrar un proyecto")
             result = migrate_project_file(project=args.project, data_dir=data_dir, create_backup=True)
             print(build_migration_confirmation(result))
             return 0
 
         if update_mode:
+            if not args.project:
+                raise ValueError("--project es obligatorio al actualizar una entrada")
             entry, file_path = update_existing_entry(
                 project=args.project,
                 entry_id=args.update_entry_id,
@@ -875,10 +1238,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(build_update_confirmation(entry, file_path))
             return 0
 
-        if not args.category:
-            raise ValueError("--category es obligatorio al guardar una entrada nueva")
-
-        entry, file_path = append_entry(
+        outcome = capture_entry(
             project=args.project,
             category=args.category,
             content=args.content,
@@ -890,6 +1250,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             tags=args.tags,
             additional_content=args.additional_content,
         )
+        if outcome.status != "saved":
+            print(outcome.prompt)
+            return 2
+
+        entry = outcome.entry
+        file_path = outcome.file_path
     except DuplicateEntryError as exc:  # pragma: no cover
         match = exc.match
         print(

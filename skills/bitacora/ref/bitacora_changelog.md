@@ -47,3 +47,12 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - añadidos defaults `calidad_resumen: fallback` y `estado: nuevo` en las 4 entradas migradas
 - mantenida compatibilidad de lectura para formato legacy y v0.2 en la transición
 - materializados tests autónomos de migración, preservación de campos, atomicidad y regresión mínima de lectura, filtrado y búsqueda
+
+### 2026-04-10 17:27:19 CEST+0200 - Bloque 2 completado (Fases 8, 9 y 10)
+- añadido `capture_entry` para cerrar el flujo: si falta proyecto pregunta primero y si falta categoría no guarda, sino que propone opciones del proyecto
+- añadidas sugerencias de categorías más usadas y categorías base conocidas por proyecto sin inferencia silenciosa del destino
+- integrada extracción ligera de metadata externa con prioridad a oEmbed (YouTube/Vimeo), `og:title`, `og:description`, `meta description` y `<title>`
+- fijado timeout duro de 3 segundos para metadata externa, con fallo seguro y guardado no bloqueante
+- rehecha la lógica de títulos y resúmenes para priorizar resumen del usuario, luego metadata útil, luego texto libre útil y finalmente fallback honesto
+- etiquetado consistente de `calidad_resumen` en `usuario`, `auto` y `fallback`, manteniendo `estado: nuevo` por defecto
+- materializados y ejecutados `test_phase8.py`, `test_phase9.py` y `test_phase10.py`, además de regresión satisfactoria sobre `test_phase5.py`, `test_phase6.py` y `test_phase7.py`

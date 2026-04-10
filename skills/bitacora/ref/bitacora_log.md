@@ -74,3 +74,14 @@ REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se implementó la migración atómica al formato v0.2, con backup obligatorio de camper.md, nuevo render YAML+Nota personal y compatibilidad de lectura durante la transición. Las 4 entradas legacy de camper.md quedaron migradas sin pérdida de campos y la lectura, el filtrado por categoría y la búsqueda siguen funcionando.
 
+2026-04-10 17:27:19 CEST+0200
+FECHA: 2026-04-10 17:27:19 CEST+0200
+FASE: Bloque 2. Fases 8, 9 y 10 (Captura y enriquecimiento inicial)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 18
+TESTS PASADOS: 18
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se cerró el flujo obligatorio de captura con proyecto y categoría, se añadió metadata externa ligera con timeout duro de 3 segundos y se rehízo la lógica de resúmenes honestos con `calidad_resumen`. El bloque queda validado con tests autónomos de fases 8, 9 y 10, más regresión ejecutada sobre las fases 5, 6 y 7.
+
