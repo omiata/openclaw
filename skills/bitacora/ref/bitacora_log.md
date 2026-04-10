@@ -139,3 +139,14 @@ TESTS FALLIDOS: 0
 REGRESIONES DETECTADAS: NO
 COMMIT REALIZADO: SÍ
 DESCRIPCIÓN: Se inyectó código fail-fast en save_entry.py para abortar y no obviar comandos de creación ignorados en modo update (--content, --title). Se promovieron los borradores de documentación como canónicos y se completó commit estructurado.
+
+2026-04-11 00:57:00 CEST+0200
+FECHA: 2026-04-11 00:57:00 CEST+0200
+FASE: Refactor documental bitacora_fases.md
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 0
+TESTS PASADOS: 0
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: SÍ
+DESCRIPCIÓN: bitacora_fases.md reducido de 1.545 líneas a ~80. Historial completo archivado en ref/arc/bitacora_fases_v0_2_full.md. Artefacto v0_2a_draft eliminado.
