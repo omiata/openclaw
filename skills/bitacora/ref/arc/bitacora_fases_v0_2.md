@@ -400,9 +400,6 @@ Para facilitar la implementación autónoma de la v0.2, las fases se han agrupad
 - Fase 21 -> requiere las fases funcionales previas ya estabilizadas, en especial Fases 8, 11, 13, 17, 19 y 20
 - Fase 22 -> requiere el cierre satisfactorio de las Fases 7 a 21
 
-### Bugfix Parche v0.2a
-Integrar validación destructiva (fail fast) para prevenir comandos CLI erróneos que mezclan semántica de creación con semántica de actualización en `scripts/save_entry.py`.
-
 ---
 
 ## Fase 7. Migracion al formato v0.2

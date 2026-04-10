@@ -129,3 +129,13 @@ REGRESIONES DETECTADAS: SI
 COMMIT REALIZADO: NO
 DESCRIPCIÓN: Se reforzó la capa conversacional de la skill en `SKILL.md`, se validó el comportamiento explícito ante falta de proyecto, falta de categoría, duplicados y modo técnico, y se cerró la limpieza final evitando notas redundantes URL↔fuente. Se añadieron `test_phase21.py` y `test_phase22.py`, y la regresión completa `test_phase1.py` a `test_phase22.py` terminó en verde.
 
+2026-04-11 00:50:00 CEST+0200
+FECHA: 2026-04-11 00:50:00 CEST+0200
+FASE: Parche CLI v0.2a
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 0
+TESTS PASADOS: 0
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: NO
+COMMIT REALIZADO: SÍ
+DESCRIPCIÓN: Se inyectó código fail-fast en save_entry.py para abortar y no obviar comandos de creación ignorados en modo update (--content, --title). Se promovieron los borradores de documentación como canónicos y se completó commit estructurado.

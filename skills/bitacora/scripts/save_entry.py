@@ -1886,6 +1886,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
 
         if update_mode:
+            if args.content or args.title or args.resource_type or args.source:
+                raise ValueError(
+                    "ERROR CLI: En modo update no se admiten banderas de creación "
+                    "(--content, --title, --type, --source). Usa banderas de mutación explícita (ej. "
+                    "--set-title) o enriquecimiento (ej. --additional-content)."
+                )
             if not args.project:
                 raise ValueError("--project es obligatorio al actualizar una entrada")
             if args.set_state:

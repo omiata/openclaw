@@ -287,12 +287,6 @@ Un `assert True`, un `assert len(x) >= 0` o cualquier comprobacion que no pueda 
 
 ---
 
-## Regla 25. Prevencion estricta de errores silenciosos CLI
-
-La CLI del script principal no debe admitir pasarelas de comandos contradictorios. Si el usuario o el bot envia banderas de creacion (`--content`, `--title`, `--type` o `--source`) en el transcurso de una actualizacion (`--update-entry-id` o `--update-source-url`), el sistema debe realizar `fail fast` de inmediato (abortar y retornar error no exitoso).
-
----
-
 ## Nota de uso
 
 Estas reglas deben estar presentes cuando se trabaja con Codex o con OpenClaw en cualquier fase de implementacion.

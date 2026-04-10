@@ -40,9 +40,6 @@
 ### Nota de estado
 Esta version sigue en fase de revision documental. Los archivos canonicos actuales permanecen intactos hasta aprobacion expresa.
 
-### 2026-04-11 00:39:00 CEST+0200 - Bugfix Parche CLI v0.2a
-- inyectada condición de `fail fast` en `save_entry.py` (dentro de `update_mode`) para prevenir que comandos referidos a la mutacion descarten silenciosamente valores de creacion (ej. `--content`, `--title`). Esto previene roturas de UX con el BOT de OpenClaw.
-
 ### 2026-04-10 15:54:32 CEST+0200 - Fase 7 completada
 - implementada la migracion atómica de `camper.md` al formato v0.2
 - creado backup obligatorio `skills/bitacora/data/camper.md.bak` antes de reescribir
