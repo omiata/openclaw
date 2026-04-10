@@ -1,111 +1,61 @@
-# Skill: bitacora
+---
+name: bitacora
+description: Gestionar una knowledge base personal por proyecto en archivos Markdown, con captura, lectura, búsqueda, estados, enriquecimiento progresivo, deduplicación conservadora y recordatorios de entradas pobres. Usar cuando el usuario quiera guardar o consultar links, vídeos, notas, ideas o referencias para proyectos como camper, balcón, recetas, poesía o similares, especialmente si falta proyecto o categoría, hay duplicados, hace falta enriquecer una entrada existente o el usuario pide modo técnico explícito.
+---
 
-Knowledge base personal para gestionar recursos de proyectos.
+# Bitácora
 
-## Descripción
+Usar esta skill para guardar y mantener recursos por proyecto en `skills/bitacora/data/`, con un archivo `.md` por proyecto.
 
-Bitácora permite guardar y consultar recursos (links, videos, notas, ideas) asociados a proyectos personales. Cada proyecto tiene su propio archivo de datos en formato Markdown con estructura YAML.
+## Reglas conversacionales
 
-## Uso
+- Preguntar siempre primero por el proyecto si falta.
+- No guardar nada si falta la categoría.
+- Proponer categorías frecuentes del proyecto cuando ayude, pero no inferir silenciosamente el destino.
+- Si una URL ya existe, no crear un duplicado. Ofrecer fusión explícita de la nueva observación en la nota personal.
+- Si la entrada queda pobre, dejar un resumen honesto y marcarla como pendiente de enriquecer.
+- Permitir enriquecer después una entrada existente con nota personal, tags, estado o edición completa, sin cambiar `id` ni `fecha`.
 
-### Guardar
-- "guarda esto en camper, categoría aislamiento"
-- "añade esta idea a camper en electricidad"
+## Salida
 
-### Consultar
-- "enséñame camper"
-- "enséñame camper, categoría aislamiento"
-- "busca en camper: cama plegable"
+- Usar salida humana por defecto.
+- Reservar el modo técnico para cuando el usuario lo pida explícitamente o para depuración.
+- En salida humana, ocultar IDs, rutas físicas, fechas ISO y tono de CLI.
+- En modo técnico, mostrar detalles internos útiles como IDs, fechas ISO, rutas y campos exactos.
 
-## Ubicación
+## Formato de datos
 
-- **Código:** `skills/bitacora/`
-- **Datos:** `skills/bitacora/data/` (un archivo `.md` por proyecto)
-- **Referencias:** `skills/bitacora/ref/`
+- Mantener un archivo por proyecto.
+- Mantener YAML como fuente de verdad para los campos estructurados.
+- Reservar el bloque Markdown a la **Nota personal**.
+- Añadir entradas nuevas por append.
+- Hacer las reescrituras de entradas existentes de forma atómica.
+- Evitar notas redundantes, por ejemplo una URL repetida idéntica a `fuente`.
 
-## Proyectos soportados
+## Scripts disponibles
 
-La skill es genérica. El usuario puede crear proyectos nuevos indicando el nombre.
+- `scripts/save_entry.py` para guardar, actualizar, migrar, fusionar duplicados, cambiar estado y editar entradas.
+- `scripts/read_entries.py` para listar, filtrar, buscar, ver recientes, ver pendientes de enriquecer, generar recordatorios y consultar modo técnico.
 
-Ejemplos: `camper`, `balcon`, `poesia`, `bicicleta`
+## Tests disponibles
 
-## Estado de implementación
+- `scripts/test_phase1.py` a `scripts/test_phase22.py`
 
-Ver `ref/bitacora_fases.md` para el plan de desarrollo por fases.
+## Ejemplos de uso
 
-## Implementación disponible
-
-### Guardado, deduplicación y actualización explícita (Fases 1, 3 y 5)
-
-Script disponible:
-- `scripts/save_entry.py`
-
-Ejemplos:
 ```bash
 python3 skills/bitacora/scripts/save_entry.py \
   --project camper \
   --category aislamiento \
-  --content "Panel XPS para suelo y paredes"
+  --content "https://example.com/guia-xps" \
+  --source "https://example.com/guia-xps"
 
 python3 skills/bitacora/scripts/save_entry.py \
   --project camper \
-  --category iluminacion \
-  --content "https://example.com/guia-luces-led-camper" \
-  --source "https://example.com/guia-luces-led-camper" \
-  --tag led \
-  --tag 12v \
-  --additional-content "Comparar tiras LED y focos empotrables"
+  --update-entry-id entry-1712613864123 \
+  --additional-content "Comparar con lana de roca en pasos de rueda"
 
-python3 skills/bitacora/scripts/save_entry.py \
-  --project camper \
-  --update-source-url "https://example.com/guia-luces-led-camper" \
-  --tag interiores \
-  --additional-content "Revisar diferencias entre CRI y temperatura de color"
-```
-
-Tests:
-- `scripts/test_phase1.py`
-- `scripts/test_phase3.py`
-- `scripts/test_phase5.py`
-
-Ejemplos:
-```bash
-python3 skills/bitacora/scripts/test_phase1.py
-python3 skills/bitacora/scripts/test_phase3.py
-```
-
-### Lectura, listado, búsqueda e índices derivados (Fases 2, 4 y 6)
-
-Script disponible:
-- `scripts/read_entries.py`
-
-Ejemplos:
-```bash
 python3 skills/bitacora/scripts/read_entries.py --project camper
-python3 skills/bitacora/scripts/read_entries.py --project camper --category Aislamiento
-python3 skills/bitacora/scripts/read_entries.py --project camper --search "cama plegable"
-python3 skills/bitacora/scripts/read_entries.py --project camper --entry-id entry-1712613864123
-python3 skills/bitacora/scripts/read_entries.py --project camper --overview
-python3 skills/bitacora/scripts/read_entries.py --global-stats
+python3 skills/bitacora/scripts/read_entries.py --project camper --pending-enrichment
+python3 skills/bitacora/scripts/read_entries.py --project camper --technical --entry-id entry-1712613864123
 ```
-
-Tests:
-- `scripts/test_phase2.py`
-- `scripts/test_phase4.py`
-- `scripts/test_phase6.py`
-
-Ejemplos:
-```bash
-python3 skills/bitacora/scripts/test_phase2.py
-python3 skills/bitacora/scripts/test_phase4.py
-python3 skills/bitacora/scripts/test_phase6.py
-```
-
-## Estado actual
-
-- Fase 1 implementada y validada.
-- Fase 2 implementada y validada.
-- Fase 3 implementada con soporte para `fuente`, `tags`, `contenido_adicional`, tipo explícito y generación de título y resumen.
-- Fase 4 implementada con búsqueda textual simple en título, resumen, tags y contenido adicional, además de consulta por `id` para ver una entrada completa.
-- Fase 5 implementada con detección de duplicados por URL exacta, bloqueo de append duplicado, actualización explícita sin cambiar `id` ni `fecha`, y avisos más claros ante categorías ambiguas.
-- Fase 6 implementada con `--overview` por proyecto, índices dinámicos de categorías y tipos, y `--global-stats` agregadas, siempre derivadas del listado maestro de entradas.

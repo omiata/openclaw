@@ -782,7 +782,7 @@ def generate_entry(
     normalized_category = normalize_name(category)
     normalized_content = normalize_text(content) if content else ""
     normalized_source = normalize_optional_text(source)
-    normalized_additional = normalize_optional_text(additional_content)
+    raw_additional = normalize_optional_text(additional_content)
     normalized_tags = normalize_tags(tags)
     normalized_type = infer_type(normalized_content, normalized_source, resource_type)
     source_url = extract_first_url(normalized_source, normalized_content)
@@ -794,7 +794,7 @@ def generate_entry(
     normalized_title = make_title(
         content=normalized_content,
         source=normalized_source,
-        additional_content=normalized_additional,
+        additional_content=raw_additional,
         explicit_title=normalize_optional_text(title),
         resource_type=normalized_type,
         category=normalized_category,
@@ -806,9 +806,15 @@ def generate_entry(
         title=normalized_title,
         content=normalized_content,
         source=normalized_source,
-        additional_content=normalized_additional,
+        additional_content=raw_additional,
         explicit_summary=normalize_optional_text(summary),
         external_metadata=external_metadata,
+    )
+    normalized_additional = normalize_personal_note(
+        raw_additional,
+        source=normalized_source,
+        title=normalized_title,
+        summary=normalized_summary,
     )
     normalized_quality = normalize_summary_quality(quality_override or inferred_quality)
     normalized_state = normalize_state(state)
@@ -958,6 +964,23 @@ def is_meaningful_note(candidate: Optional[str], *, source: Optional[str], title
     if normalized == normalize_text(summary):
         return False
     return True
+
+
+def normalize_personal_note(
+    candidate: Optional[str],
+    *,
+    source: Optional[str],
+    title: str,
+    summary: str,
+) -> Optional[str]:
+    normalized = normalize_optional_text(candidate)
+    if not normalized:
+        return None
+    if source and normalized == normalize_text(source):
+        return None
+    if source and is_plain_url(normalized) and comparable_url(normalized) == comparable_url(source):
+        return None
+    return normalized
 
 
 def entry_from_block(block: str) -> Entry:
@@ -1532,10 +1555,15 @@ def update_existing_entry(
     additional_content: Optional[str] = None,
 ) -> tuple[Entry, Path]:
     normalized_summary = normalize_optional_text(summary)
-    normalized_additional = normalize_optional_text(additional_content)
     normalized_new_tags = normalize_tags(tags)
 
     def mutator(entry: Entry) -> Entry:
+        normalized_additional = normalize_personal_note(
+            additional_content,
+            source=entry.fuente,
+            title=entry.titulo,
+            summary=normalized_summary or entry.resumen,
+        )
         merged_tags = entry.tags
         if normalized_new_tags:
             merged_tags = normalize_tags([*entry.tags, *normalized_new_tags])

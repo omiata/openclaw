@@ -118,3 +118,14 @@ REGRESIONES DETECTADAS: SI
 COMMIT REALIZADO: NO
 DESCRIPCION: Se implementaron la paginación con offset y navegación larga, la canonicalización conservadora de URLs, el upsert opt-in sobre duplicados y la edición completa con fecha_actualizacion manteniendo escritura atómica. Durante la validación global aparecieron dos incompatibilidades colaterales (contenido_adicional en YAML y código de salida CLI en prompts incompletos), quedaron corregidas y la batería test_phase1.py a test_phase20.py terminó en verde.
 
+2026-04-10 19:59:39 CEST+0200
+FECHA: 2026-04-10 19:59:39 CEST+0200
+FASE: Bloque 6. Fases 21 y 22 (Modo técnico y cierre)
+ESTADO: COMPLETADA
+TESTS EJECUTADOS: 22
+TESTS PASADOS: 22
+TESTS FALLIDOS: 0
+REGRESIONES DETECTADAS: SI
+COMMIT REALIZADO: NO
+DESCRIPCIÓN: Se reforzó la capa conversacional de la skill en `SKILL.md`, se validó el comportamiento explícito ante falta de proyecto, falta de categoría, duplicados y modo técnico, y se cerró la limpieza final evitando notas redundantes URL↔fuente. Se añadieron `test_phase21.py` y `test_phase22.py`, y la regresión completa `test_phase1.py` a `test_phase22.py` terminó en verde.
+

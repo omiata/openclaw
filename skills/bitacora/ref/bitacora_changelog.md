@@ -79,3 +79,9 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - añadida edición completa de entradas para `categoria`, `tipo`, `titulo` y `fuente`, con `fecha_actualizacion`, preservación de `id` y `fecha`, y soporte de movimiento entre proyectos mediante reescritura atómica
 - reforzada la compatibilidad del formato almacenando `contenido_adicional` también en YAML y corrigiendo los códigos de salida CLI en flujos con proyecto o categoría ausentes
 - añadidos y ejecutados `test_phase16.py`, `test_phase18.py`, `test_phase19.py` y `test_phase20.py`, más regresión completa satisfactoria sobre `test_phase1.py` a `test_phase20.py`
+
+### 2026-04-10 19:59:39 CEST+0200 - Bloque 6 completado (Fases 21 y 22)
+- reescrito `SKILL.md` con frontmatter válido y reglas conversacionales explícitas para proyecto obligatorio, categoría obligatoria, duplicados, entradas pobres, enriquecimiento posterior y modo técnico explícito
+- acotada la limpieza final en `save_entry.py` para evitar solo la redundancia inútil de URL repetida entre `fuente` y nota personal, sin romper notas útiles ni regresiones antiguas
+- añadidos `test_phase21.py` y `test_phase22.py` para materializar los tests del bloque sobre capa conversacional fuerte, modo técnico y limpieza final
+- ejecutada regresión completa satisfactoria sobre `test_phase1.py` a `test_phase22.py`
