@@ -16,7 +16,10 @@ from save_entry import (
     DEFAULT_DATA_DIR,
     ENTRY_DELIMITER,
     ascii_fold,
+    comparable_url,
+    derive_reference_thumbnail_url,
     entry_from_block,
+    extract_first_url,
     format_visible_date,
     humanize_category_name,
     humanize_project_name,
@@ -49,6 +52,7 @@ HUMAN_FIELD_LABELS = {
     "tags": "los tags",
     "contenido_adicional": "la nota personal",
 }
+TELEGRAM_CALLBACK_DATA_MAX_BYTES = 64
 
 
 @dataclass
@@ -240,6 +244,132 @@ def build_end_of_results_hint(window: PaginationWindow, *, technical: bool = Tru
     if technical:
         return f"No hay más resultados. El último tramo disponible llega hasta {window.total}."
     return "No hay más resultados. Ya has llegado al final."
+
+
+def build_telegram_carousel_callback_data(cache_key: str, index: int, action: str = "s") -> str:
+    normalized_cache_key = cache_key.strip()
+    normalized_action = action.strip().lower()
+    if not normalized_cache_key:
+        raise ValueError("carousel cache key vacío")
+    if ":" in normalized_cache_key:
+        raise ValueError("carousel cache key no puede contener ':'")
+    if index < 0:
+        raise ValueError("carousel index no puede ser negativo")
+    if normalized_action not in {"s", "n"}:
+        raise ValueError("carousel action no soportada")
+
+    callback_data = f"btc:{normalized_cache_key}:{index}:{normalized_action}"
+    if len(callback_data.encode("utf-8")) > TELEGRAM_CALLBACK_DATA_MAX_BYTES:
+        raise ValueError("callback_data supera los 64 bytes de Telegram")
+    return callback_data
+
+
+def build_telegram_carousel_buttons(cache_key: str, current_index: int, total_items: int) -> list[list[dict[str, str]]]:
+    safe_total = max(total_items, 1)
+    safe_current = min(max(current_index, 0), safe_total - 1)
+    previous_index = max(safe_current - 1, 0)
+    next_index = min(safe_current + 1, safe_total - 1)
+    return [[
+        {
+            "text": "⬅️",
+            "callback_data": build_telegram_carousel_callback_data(cache_key, previous_index, "s"),
+        },
+        {
+            "text": f"{safe_current + 1} / {safe_total}",
+            "callback_data": build_telegram_carousel_callback_data(cache_key, safe_current, "n"),
+        },
+        {
+            "text": "➡️",
+            "callback_data": build_telegram_carousel_callback_data(cache_key, next_index, "s"),
+        },
+    ]]
+
+
+def resolve_entry_reference_url(entry: StoredEntry) -> Optional[str]:
+    return comparable_url(extract_first_url(entry.fuente, entry.contenido, entry.contenido_adicional))
+
+
+def build_telegram_carousel_caption(entry: StoredEntry, source_url: str) -> str:
+    return f"{entry.titulo}\n{source_url}"
+
+
+def build_telegram_carousel_item(
+    entry: StoredEntry,
+    *,
+    index: int,
+    total_items: int,
+    cache_key: Optional[str] = None,
+) -> Optional[dict]:
+    source_url = resolve_entry_reference_url(entry)
+    if not source_url:
+        return None
+
+    thumbnail_url = derive_reference_thumbnail_url(source_url)
+    item = {
+        "entry_id": entry.entry_id,
+        "index": index,
+        "position": index + 1,
+        "total": total_items,
+        "title": entry.titulo,
+        "source_url": source_url,
+        "thumbnail_url": thumbnail_url,
+        "caption": build_telegram_carousel_caption(entry, source_url),
+        "message": {
+            "media_url": thumbnail_url,
+            "caption": build_telegram_carousel_caption(entry, source_url),
+            "edit_mode": "media+caption" if thumbnail_url else "caption-only",
+        },
+    }
+    if cache_key:
+        item["buttons"] = build_telegram_carousel_buttons(cache_key, index, total_items)
+        item["message"]["buttons"] = item["buttons"]
+    return item
+
+
+def build_telegram_carousel_output(
+    entries: list[StoredEntry],
+    *,
+    project: str,
+    source_view: str,
+    total_entries: int,
+    warnings: list[ParseWarning],
+    requested_category: Optional[str] = None,
+    query: Optional[str] = None,
+    max_entries: int = 20,
+    offset: int = 0,
+    cache_key: Optional[str] = None,
+) -> str:
+    eligible_entries = [entry for entry in entries if resolve_entry_reference_url(entry)]
+    eligible_entries.sort(
+        key=lambda entry: 0 if derive_reference_thumbnail_url(resolve_entry_reference_url(entry)) else 1
+    )
+    page = paginate_items(eligible_entries, offset, max_entries)
+    items = [
+        item
+        for index, entry in enumerate(page.visible_items, start=page.start_index)
+        for item in [build_telegram_carousel_item(entry, index=index, total_items=page.total, cache_key=cache_key)]
+        if item is not None
+    ]
+
+    payload = {
+        "kind": "telegram_inline_carousel",
+        "version": 1,
+        "project": project,
+        "source_view": source_view,
+        "requested_category": requested_category,
+        "query": query,
+        "total_entries": total_entries,
+        "total_items": page.total,
+        "offset": page.offset,
+        "limit": page.limit,
+        "visible_count": page.visible_count,
+        "items": items,
+        "initial": items[0]["message"] if items else None,
+        "warnings": [format_warning(warning) for warning in warnings],
+    }
+    if not items:
+        payload["empty_reason"] = "No hay entradas con enlace disponibles para carrusel."
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def extract_entry_id(raw_block: str) -> Optional[str]:
@@ -1272,6 +1402,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--overview", action="store_true", help="Mostrar índices y estadísticas derivadas del proyecto")
     parser.add_argument("--global-stats", action="store_true", help="Mostrar estadísticas agregadas de todos los proyectos")
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
+    parser.add_argument("--telegram-carousel", action="store_true", help="Emitir JSON estructurado para un carrusel inline de Telegram")
+    parser.add_argument("--carousel-cache-key", help="Clave compacta opcional para precalcular callback_data de Telegram")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
     parser.add_argument("--offset", type=int, default=0, help="Desplazamiento para paginar resultados")
@@ -1301,6 +1433,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         parser.error("Usa solo un modo principal por ejecución")
     if args.overview and (args.category or args.search or args.entry_id or args.state):
         parser.error("--overview no puede combinarse con --category, --search, --entry-id ni --state")
+    if args.carousel_cache_key and not args.telegram_carousel:
+        parser.error("--carousel-cache-key requiere --telegram-carousel")
     if not args.global_stats and not args.project:
         parser.error("--project es obligatorio salvo con --global-stats")
     return args
@@ -1329,6 +1463,21 @@ def main(argv: Optional[list[str]] = None) -> int:
                 entry_id=args.entry_id,
                 data_dir=Path(args.data_dir),
             )
+            if args.telegram_carousel:
+                entries = [result.entry] if result.entry is not None else []
+                print(
+                    build_telegram_carousel_output(
+                        entries,
+                        project=result.project,
+                        source_view="entry",
+                        total_entries=result.total_entries,
+                        warnings=result.warnings,
+                        max_entries=max(args.max_entries, 1),
+                        offset=args.offset,
+                        cache_key=args.carousel_cache_key,
+                    )
+                )
+                return 0
             print(build_entry_output(result, technical=args.technical))
             return 0
 
@@ -1338,6 +1487,21 @@ def main(argv: Optional[list[str]] = None) -> int:
                 query=args.search,
                 data_dir=Path(args.data_dir),
             )
+            if args.telegram_carousel:
+                print(
+                    build_telegram_carousel_output(
+                        [hit.entry for hit in result.matched_hits],
+                        project=result.project,
+                        source_view="search",
+                        total_entries=result.total_entries,
+                        warnings=result.warnings,
+                        query=result.query,
+                        max_entries=max(args.max_entries, 1),
+                        offset=args.offset,
+                        cache_key=args.carousel_cache_key,
+                    )
+                )
+                return 0
             print(build_search_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
@@ -1347,6 +1511,20 @@ def main(argv: Optional[list[str]] = None) -> int:
                 data_dir=Path(args.data_dir),
                 limit=max(args.recent, 0),
             )
+            if args.telegram_carousel:
+                print(
+                    build_telegram_carousel_output(
+                        result.matched_entries,
+                        project=result.project,
+                        source_view="recent",
+                        total_entries=result.total_entries,
+                        warnings=result.warnings,
+                        max_entries=max(args.max_entries, 1),
+                        offset=args.offset,
+                        cache_key=args.carousel_cache_key,
+                    )
+                )
+                return 0
             print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
@@ -1356,6 +1534,20 @@ def main(argv: Optional[list[str]] = None) -> int:
                 quality=args.summary_quality,
                 data_dir=Path(args.data_dir),
             )
+            if args.telegram_carousel:
+                print(
+                    build_telegram_carousel_output(
+                        result.matched_entries,
+                        project=result.project,
+                        source_view=result.view_name,
+                        total_entries=result.total_entries,
+                        warnings=result.warnings,
+                        max_entries=max(args.max_entries, 1),
+                        offset=args.offset,
+                        cache_key=args.carousel_cache_key,
+                    )
+                )
+                return 0
             print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
@@ -1364,6 +1556,20 @@ def main(argv: Optional[list[str]] = None) -> int:
                 project=args.project,
                 data_dir=Path(args.data_dir),
             )
+            if args.telegram_carousel:
+                print(
+                    build_telegram_carousel_output(
+                        result.matched_entries,
+                        project=result.project,
+                        source_view=result.view_name,
+                        total_entries=result.total_entries,
+                        warnings=result.warnings,
+                        max_entries=max(args.max_entries, 1),
+                        offset=args.offset,
+                        cache_key=args.carousel_cache_key,
+                    )
+                )
+                return 0
             print(build_operational_view_output(result, max_entries=max(args.max_entries, 1), technical=args.technical, offset=args.offset))
             return 0
 
@@ -1377,6 +1583,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     except Exception as exc:  # pragma: no cover
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if args.telegram_carousel:
+        print(
+            build_telegram_carousel_output(
+                result.matched_entries,
+                project=result.project,
+                source_view="list",
+                total_entries=result.total_entries,
+                warnings=result.warnings,
+                requested_category=result.requested_category,
+                max_entries=max(args.max_entries, 1),
+                offset=args.offset,
+                cache_key=args.carousel_cache_key,
+            )
+        )
+        return 0
 
     print(build_output(result, max_entries=max(args.max_entries, 1), overview=overview, technical=args.technical, offset=args.offset))
     return 0

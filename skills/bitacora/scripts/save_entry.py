@@ -139,6 +139,7 @@ class ExternalMetadata:
     description: Optional[str] = None
     source_kind: Optional[str] = None
     resolved_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
 
 
 @dataclass
@@ -326,6 +327,44 @@ def extract_first_url(*values: Optional[str]) -> Optional[str]:
     return urls[0] if urls else None
 
 
+def extract_youtube_video_id(url: Optional[str]) -> Optional[str]:
+    normalized = canonicalize_url(url)
+    if not normalized:
+        return None
+    try:
+        parsed = urlparse(normalized)
+    except Exception:
+        return None
+
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in YOUTUBE_HOSTS:
+        return None
+
+    if hostname == "youtu.be":
+        candidate = parsed.path.strip("/").split("/")[0]
+        return candidate or None
+
+    if parsed.path == "/watch":
+        query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        candidate = normalize_optional_text(query_params.get("v"))
+        return candidate or None
+
+    if parsed.path.startswith("/shorts/") or parsed.path.startswith("/embed/"):
+        pieces = [piece for piece in parsed.path.split("/") if piece]
+        if len(pieces) >= 2:
+            candidate = normalize_optional_text(pieces[1])
+            return candidate or None
+
+    return None
+
+
+def derive_reference_thumbnail_url(url: Optional[str]) -> Optional[str]:
+    video_id = extract_youtube_video_id(url)
+    if video_id:
+        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    return None
+
+
 def canonicalize_url(url: Optional[str]) -> Optional[str]:
     normalized = normalize_optional_text(url)
     if not normalized:
@@ -488,6 +527,7 @@ def merge_metadata(*items: Optional[ExternalMetadata]) -> Optional[ExternalMetad
     merged_description: Optional[str] = None
     merged_source: Optional[str] = None
     merged_url: Optional[str] = None
+    merged_thumbnail_url: Optional[str] = None
 
     for item in items:
         if item is None:
@@ -500,14 +540,17 @@ def merge_metadata(*items: Optional[ExternalMetadata]) -> Optional[ExternalMetad
             merged_source = item.source_kind
         if merged_url is None and item.resolved_url:
             merged_url = item.resolved_url
+        if merged_thumbnail_url is None and item.thumbnail_url:
+            merged_thumbnail_url = normalize_optional_text(item.thumbnail_url)
 
-    if not any((merged_title, merged_description, merged_source, merged_url)):
+    if not any((merged_title, merged_description, merged_source, merged_url, merged_thumbnail_url)):
         return None
     return ExternalMetadata(
         title=merged_title,
         description=merged_description,
         source_kind=merged_source,
         resolved_url=merged_url,
+        thumbnail_url=merged_thumbnail_url,
     )
 
 
@@ -529,6 +572,12 @@ def parse_html_metadata(html_text: str, url: str) -> Optional[ExternalMetadata]:
         r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']',
         r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']',
     )
+    thumbnail_url = find_meta(
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+    )
 
     if title is None:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", html_text, re.IGNORECASE | re.DOTALL)
@@ -541,6 +590,7 @@ def parse_html_metadata(html_text: str, url: str) -> Optional[ExternalMetadata]:
             description=description,
             source_kind="html",
             resolved_url=url,
+            thumbnail_url=thumbnail_url,
         )
     )
     return metadata
@@ -599,6 +649,7 @@ def extract_external_metadata(
                     description=raw.get("description") or raw.get("summary"),
                     source_kind="oembed",
                     resolved_url=url,
+                    thumbnail_url=raw.get("thumbnail_url"),
                 )
             )
     except (TimeoutError, HTTPError, URLError, ValueError):
