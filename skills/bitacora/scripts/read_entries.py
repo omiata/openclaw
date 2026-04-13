@@ -372,6 +372,14 @@ def build_telegram_carousel_output(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def emit_telegram_carousel_output(output: str) -> None:
+    # Carousel payload travels over stderr so the Telegram bridge does not surface it as visible text.
+    sys.stderr.write(output)
+    if not output.endswith("\n"):
+        sys.stderr.write("\n")
+    sys.stderr.flush()
+
+
 def extract_entry_id(raw_block: str) -> Optional[str]:
     match = re.search(r'^id:\s+"?([^"\n]+)"?$', raw_block, re.MULTILINE)
     if match:
@@ -1465,7 +1473,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
             if args.telegram_carousel:
                 entries = [result.entry] if result.entry is not None else []
-                print(
+                emit_telegram_carousel_output(
                     build_telegram_carousel_output(
                         entries,
                         project=result.project,
@@ -1488,7 +1496,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 data_dir=Path(args.data_dir),
             )
             if args.telegram_carousel:
-                print(
+                emit_telegram_carousel_output(
                     build_telegram_carousel_output(
                         [hit.entry for hit in result.matched_hits],
                         project=result.project,
@@ -1512,7 +1520,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 limit=max(args.recent, 0),
             )
             if args.telegram_carousel:
-                print(
+                emit_telegram_carousel_output(
                     build_telegram_carousel_output(
                         result.matched_entries,
                         project=result.project,
@@ -1535,7 +1543,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 data_dir=Path(args.data_dir),
             )
             if args.telegram_carousel:
-                print(
+                emit_telegram_carousel_output(
                     build_telegram_carousel_output(
                         result.matched_entries,
                         project=result.project,
@@ -1557,7 +1565,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 data_dir=Path(args.data_dir),
             )
             if args.telegram_carousel:
-                print(
+                emit_telegram_carousel_output(
                     build_telegram_carousel_output(
                         result.matched_entries,
                         project=result.project,
@@ -1585,7 +1593,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     if args.telegram_carousel:
-        print(
+        emit_telegram_carousel_output(
             build_telegram_carousel_output(
                 result.matched_entries,
                 project=result.project,
