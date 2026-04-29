@@ -293,6 +293,12 @@ La CLI del script principal no debe admitir pasarelas de comandos contradictorio
 
 ---
 
+## Regla 26. Flujo de salida aislado y fail-fast para adjuntos
+
+Cualquier documento (ej. PDF) servido al usuario debe copiarse previamente a la carpeta `tmp/outbound/` con un nombre único. Queda prohibido emitir comandos `MEDIA:` con rutas relativas sucias (`../`) o exponer el directorio de datos. Si el archivo no existe en la ruta esperada de datos (`data/adjuntos/`), el sistema debe realizar fail-fast devolviendo un error explícito.
+
+---
+
 ## Nota de uso
 
 Estas reglas deben estar presentes cuando se trabaja con Codex o con OpenClaw en cualquier fase de implementacion.

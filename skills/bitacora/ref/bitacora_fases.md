@@ -71,6 +71,16 @@ ignorados silenciosamente en modo `--update-entry-id`.
 
 ---
 
+### Parche v0.2b — Flujo Seguro de Documentos Adjuntos (2026-04-29)
+
+**Problema:** Al solicitar devolver un archivo adjunto (ej. un PDF guardado previamente), existía riesgo de exponer rutas internas del workspace o emitir enlaces que fallasen al intentar ser renderizados en canales como Telegram.
+
+**Corrección:** En `scripts/read_entries.py` se añade una función explícita para resolver archivos desde la carpeta canónica `data/adjuntos/`, copiarlos temporalmente a `tmp/outbound/` con un nombre único, y emitir la etiqueta especial `MEDIA:./tmp/outbound/<nombre>`. Se debe incluir verificación de existencia (fail fast) del archivo en disco.
+
+**Regla asociada:** Reglas de Seguridad (Flujo de salida aislado y fail-fast en adjuntos).
+
+---
+
 ## Próximas fases (v0.3+)
 
 *Sin fases planificadas todavía.*
