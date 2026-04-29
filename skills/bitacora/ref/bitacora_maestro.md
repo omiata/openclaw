@@ -341,6 +341,11 @@ Lista inicial:
 ### Listar por tipo
 - Permitir preguntas como "ensename todos los videos" o "que ideas tengo guardadas".
 
+### Servir documento
+- Al pedir recuperar un archivo físico (PDF u otro adjunto), servirlo aislando su ruta original.
+- Usar UUID fresco y copiar a un entorno temporal seguro (ej. `tmp/outbound/`) antes de emitirlo.
+- Realizar fail-fast si el archivo no existe físicamente en `data/adjuntos/`.
+
 ### Consultas operativas de v0.2
 - Permitir listar por `estado`.
 - Permitir ver ultimas entradas.
@@ -460,6 +465,7 @@ La experiencia funcional para el usuario debe seguir siendo la misma independien
 17. La arquitectura debera poder evolucionar a rotacion de archivos si el tamano lo exige.
 18. El workspace real es `/mnt/c/omi/openclaw/`.
 19. La skill se llama bitacora y es generica para multiples proyectos.
+20. Los documentos adjuntos se confinan en `data/adjuntos/` y se emiten de forma asilada copiándolos a `tmp/outbound/`.
 
 ---
 

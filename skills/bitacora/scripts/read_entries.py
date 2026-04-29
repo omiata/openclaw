@@ -6,7 +6,9 @@ from collections import Counter
 import difflib
 import json
 import re
+import shutil
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1412,6 +1414,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--technical", action="store_true", help="Mostrar salida técnica explícita")
     parser.add_argument("--telegram-carousel", action="store_true", help="Emitir JSON estructurado para un carrusel inline de Telegram")
     parser.add_argument("--carousel-cache-key", help="Clave compacta opcional para precalcular callback_data de Telegram")
+    parser.add_argument("--serve-document", help="Servir el adjunto físico asociado a un entry_id")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="Directorio de datos")
     parser.add_argument("--max-entries", type=int, default=20, help="Máximo de entradas a mostrar")
     parser.add_argument("--offset", type=int, default=0, help="Desplazamiento para paginar resultados")
@@ -1425,22 +1428,25 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         bool(args.reminder_preview),
         bool(args.reminder_job),
         bool(args.overview),
+        bool(args.serve_document),
     ]
     if args.category and args.search:
         parser.error("--category y --search no pueden usarse a la vez")
     if args.entry_id and (args.category or args.search or args.state):
         parser.error("--entry-id no puede combinarse con --category, --search ni --state")
+    if args.serve_document and (args.category or args.search or args.state):
+        parser.error("--serve-document no puede combinarse con --category, --search ni --state")
     if args.global_stats and args.project:
         parser.error("--global-stats no puede combinarse con --project")
     if args.global_stats and (
-        args.category or args.state or args.search or args.entry_id or args.overview or args.recent is not None
+        args.category or args.state or args.search or args.entry_id or args.serve_document or args.overview or args.recent is not None
         or args.summary_quality or args.pending_enrichment or args.reminder_preview or args.reminder_job
     ):
         parser.error("--global-stats no puede combinarse con filtros ni con --overview")
     if sum(1 for mode in exclusive_modes if mode) > 1:
         parser.error("Usa solo un modo principal por ejecución")
-    if args.overview and (args.category or args.search or args.entry_id or args.state):
-        parser.error("--overview no puede combinarse con --category, --search, --entry-id ni --state")
+    if args.overview and (args.category or args.search or args.entry_id or args.serve_document or args.state):
+        parser.error("--overview no puede combinarse con --category, --search, --entry-id, --serve-document ni --state")
     if args.carousel_cache_key and not args.telegram_carousel:
         parser.error("--carousel-cache-key requiere --telegram-carousel")
     if not args.global_stats and not args.project:
@@ -1463,6 +1469,54 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.reminder_preview:
             print(build_enrichment_reminder(args.project, Path(args.data_dir), technical=args.technical, limit=max(args.max_entries, 1)))
+            return 0
+
+        if args.serve_document:
+            result = get_entry_by_id(
+                project=args.project,
+                entry_id=args.serve_document,
+                data_dir=Path(args.data_dir),
+            )
+            if not result.entry:
+                print(f"Error: La entrada con ID {args.serve_document} no existe.", file=sys.stderr)
+                return 1
+            if result.entry.tipo != "documento":
+                print(f"Error: La entrada {args.serve_document} no es de tipo 'documento'.", file=sys.stderr)
+                return 1
+            
+            # Extract filename from fuente "PDF adjunto: <filename>" or similar.
+            # Or just take the whole fuente if it's not starting with "PDF adjunto:"
+            # Actually, sync_inbox says "fuente: PDF adjunto: <nombre>"
+            match = re.search(r'PDF adjunto:\s*(.+)', result.entry.fuente or "")
+            filename = match.group(1).strip() if match else (result.entry.fuente or "").strip()
+
+            if not filename:
+                print(f"Error: No se encontró un nombre de archivo válido en la fuente de la entrada.", file=sys.stderr)
+                return 1
+
+            adjuntos_dir = Path(args.data_dir) / "adjuntos"
+            source_path = (adjuntos_dir / filename).resolve()
+
+            # Prevent path traversal
+            try:
+                source_path.relative_to(adjuntos_dir.resolve())
+            except ValueError:
+                print(f"Error: Ruta de archivo inválida. Path traversal detectado.", file=sys.stderr)
+                return 1
+
+            if not source_path.exists() or not source_path.is_file():
+                print(f"Error: El archivo adjunto '{filename}' no existe en disco.", file=sys.stderr)
+                return 1
+
+            outbound_dir = Path("tmp/outbound")
+            outbound_dir.mkdir(parents=True, exist_ok=True)
+            
+            safe_name = f"{uuid.uuid4().hex}_{source_path.name}"
+            target_path = outbound_dir / safe_name
+            shutil.copy2(source_path, target_path)
+
+            # Usamos flush explícito aunque el print emite un salto de línea
+            print(f"MEDIA:./tmp/outbound/{safe_name}", flush=True)
             return 0
 
         if args.entry_id:
