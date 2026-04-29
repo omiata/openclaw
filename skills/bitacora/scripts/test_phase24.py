@@ -86,10 +86,6 @@ Nota personal
         valid_pdf_path = adjuntos_dir / "manual_coche.pdf"
         valid_pdf_path.write_text("fake pdf content", encoding="utf-8")
 
-        # Check general parsing
-        res = run_script(["--project", project, "--data-dir", str(data_dir), "--technical"])
-        print(f"DEBUG TECHNICAL: {res.stdout.encode('ascii', 'replace').decode('ascii')} {res.stderr.encode('ascii', 'replace').decode('ascii')}")
-
         # 1. Non-existent entry
 
         result = run_script(["--project", project, "--data-dir", str(data_dir), "--serve-document", "entry-nonexistent"])
@@ -121,8 +117,6 @@ Nota personal
         copied_file = Path(path_str).resolve()
         assert copied_file.exists(), f"El archivo copiado no existe en {copied_file}"
         assert copied_file.read_text(encoding="utf-8") == "fake pdf content"
-
-        print("Test phase 24 (serve_document) passed!")
 
 if __name__ == "__main__":
     test_serve_document()
