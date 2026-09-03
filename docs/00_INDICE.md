@@ -8,9 +8,9 @@ La arquitectura elegida es:
 
 ```text
 C:\Users\Omar\.openclaw\                          <- configuración global real de OpenClaw
-C:\omi\openclaw\                                  <- repo Git principal y workspace único
-C:\omi\openclaw\docs\                             <- documentación
-C:\omi\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro dentro del repo
+C:\Users\Omar\Projects\openclaw\                                  <- repo Git principal y workspace único
+C:\Users\Omar\Projects\openclaw\docs\                             <- documentación
+C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro dentro del repo
 ```
 
 ## Orden recomendado de lectura
@@ -55,6 +55,6 @@ Estos se conservan como documentos historicos de la fase inicial:
 ## Regla simple
 
 - [ ] Configuracion global real de OpenClaw: `C:\Users\Omar\.openclaw`
-- [ ] Workspace y repo principal: `C:\omi\openclaw`
-- [ ] Documentacion: `C:\omi\openclaw\docs`
-- [ ] Proyecto futuro: `C:\omi\openclaw\projects\kleinanzeigen-watcher`
+- [ ] Workspace y repo principal: `C:\Users\Omar\Projects\openclaw`
+- [ ] Documentacion: `C:\Users\Omar\Projects\openclaw\docs`
+- [ ] Proyecto futuro: `C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher`

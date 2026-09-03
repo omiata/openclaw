@@ -21,9 +21,9 @@ Arquitectura elegida:
 
 ```text
 C:\Users\Omar\.openclaw\
-C:\omi\openclaw\
-C:\omi\openclaw\docs\
-C:\omi\openclaw\projects\kleinanzeigen-watcher\
+C:\Users\Omar\Projects\openclaw\
+C:\Users\Omar\Projects\openclaw\docs\
+C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher\
 ```
 
 ### Bloque 4. Siguiente paso pendiente

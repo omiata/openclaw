@@ -14,7 +14,7 @@ Estamos dejando OpenClaw instalado en Windows de la forma más simple posible:
 
 ## Arquitectura correcta
 
-### `C:\omi\openclaw`
+### `C:\Users\Omar\Projects\openclaw`
 
 Esta carpeta será el workspace base de OpenClaw.
 
@@ -51,7 +51,7 @@ Aquí deberían ir solo:
 Si algo es reutilizable o forma parte de la base de OpenClaw, va en:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 Si algo es específico del proyecto de Kleinanzeigen, va en:
@@ -96,7 +96,7 @@ openclaw gateway status
 - [ ] `openclaw gateway status` devuelve estado
 - [ ] el Gateway aparece como `Scheduled Task (registered)`
 - [ ] `RPC probe: ok`
-- [ ] `C:\omi\openclaw` queda como base funcional
+- [ ] `C:\Users\Omar\Projects\openclaw` queda como base funcional
 - [ ] `C:\omi\kleinanzeigen-watcher` queda como proyecto separado
 
 ## Cómo saber si algo va bien
@@ -192,7 +192,7 @@ No lo haremos.
 Las capacidades compartidas van en:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 ## Actualización más adelante
@@ -229,4 +229,4 @@ openclaw health
 - [x] OpenClaw instalado con `npm`
 - [x] Gateway funcionando como `Scheduled Task`
 - [x] `memory search` desactivado para simplificar
-- [x] Workspace base: `C:\omi\openclaw`
+- [x] Workspace base: `C:\Users\Omar\Projects\openclaw`

@@ -52,7 +52,7 @@ C:\Users\Omar\.openclaw\skills
 Si son propias de tu trabajo diario en el workspace:
 
 ```text
-C:\omi\openclaw\skills
+C:\Users\Omar\Projects\openclaw\skills
 ```
 
 ### Skills del watcher
@@ -60,7 +60,7 @@ C:\omi\openclaw\skills
 Solo si algun dia fueran especificas de ese proyecto:
 
 ```text
-C:\omi\openclaw\projects\kleinanzeigen-watcher\skills
+C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher\skills
 ```
 
 ## Regla importante

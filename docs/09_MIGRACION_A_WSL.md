@@ -22,7 +22,7 @@ Windows nativo queda como instalacion anterior, pero no como entorno principal.
 
 ```text
 Windows
-C:\omi\openclaw\                         <- repo y documentacion
+C:\Users\Omar\Projects\openclaw\                         <- repo y documentacion
 C:\Users\Omar\.openclaw\                 <- config anterior de Windows, no copiar a WSL
 
 WSL

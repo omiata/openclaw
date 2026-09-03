@@ -19,7 +19,7 @@ Esta guía sirve para:
 
 1. Instalar OpenClaw en Windows con la forma oficial más simple.
 2. Usar PowerShell con comandos exactos.
-3. Dejar OpenClaw instalado globalmente y usar `C:\omi\openclaw` como base funcional.
+3. Dejar OpenClaw instalado globalmente y usar `C:\Users\Omar\Projects\openclaw` como base funcional.
 4. Separar OpenClaw de `C:\omi\kleinanzeigen-watcher`.
 5. Comprobar que la instalación quedó bien.
 6. No empezar todavía con Kleinanzeigen.
@@ -29,14 +29,14 @@ Esta guía sirve para:
 Solo vamos a usar una arquitectura:
 
 1. OpenClaw se instala globalmente con el instalador oficial.
-2. `C:\omi\openclaw` será el workspace base de OpenClaw.
-3. En `C:\omi\openclaw` irán skills, plugins y extras reutilizables.
+2. `C:\Users\Omar\Projects\openclaw` será el workspace base de OpenClaw.
+3. En `C:\Users\Omar\Projects\openclaw` irán skills, plugins y extras reutilizables.
 4. `C:\omi\kleinanzeigen-watcher` será un proyecto separado.
 5. En `C:\omi\kleinanzeigen-watcher` irán solo instrucciones y archivos del watcher.
 
 ## Importante antes de empezar
 
-### Qué significa `C:\omi\openclaw`
+### Qué significa `C:\Users\Omar\Projects\openclaw`
 
 OpenClaw se instala como programa global y después tú trabajas con él dentro de un workspace base.
 
@@ -49,12 +49,12 @@ openclaw
 será el comando disponible en PowerShell, y:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 será tu workspace base para cosas reutilizables de OpenClaw.
 
-### Qué debería ir en `C:\omi\openclaw`
+### Qué debería ir en `C:\Users\Omar\Projects\openclaw`
 
 Aquí sí pueden ir cosas como:
 
@@ -88,7 +88,7 @@ Abre PowerShell y ejecuta:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\omi | Out-Null
-New-Item -ItemType Directory -Force -Path C:\omi\openclaw | Out-Null
+New-Item -ItemType Directory -Force -Path C:\Users\Omar\Projects\openclaw | Out-Null
 New-Item -ItemType Directory -Force -Path C:\omi\openclaw-setup | Out-Null
 New-Item -ItemType Directory -Force -Path C:\omi\kleinanzeigen-watcher | Out-Null
 ```
@@ -251,7 +251,7 @@ openclaw gateway status
 
 ## Fase 5. Preparar el workspace base de OpenClaw
 
-### Paso 5. Usar `C:\omi\openclaw` como workspace base
+### Paso 5. Usar `C:\Users\Omar\Projects\openclaw` como workspace base
 
 A partir de ahora, esta carpeta será tu workspace principal de OpenClaw en Windows.
 
@@ -259,7 +259,7 @@ No hace falta meter nada más todavía.
 
 Lo importante en esta fase es:
 
-- [ ] reservar `C:\omi\openclaw` como workspace base
+- [ ] reservar `C:\Users\Omar\Projects\openclaw` como workspace base
 - [ ] usar esta carpeta cuando trabajes con OpenClaw a nivel general
 - [ ] no mezclar aquí cosas específicas de Kleinanzeigen
 
@@ -290,7 +290,7 @@ No lo haremos.
 La base reutilizable va en:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 ## Fase 6. Separar OpenClaw del proyecto futuro
@@ -299,7 +299,7 @@ C:\omi\openclaw
 
 Usaremos esto a partir de ahora:
 
-- [ ] `C:\omi\openclaw` para OpenClaw base
+- [ ] `C:\Users\Omar\Projects\openclaw` para OpenClaw base
 - [ ] `C:\omi\openclaw-setup` para esta documentación
 - [ ] `C:\omi\kleinanzeigen-watcher` solo para el proyecto y sus instrucciones
 
@@ -319,7 +319,7 @@ Get-ChildItem C:\omi
 
 No lo haremos.
 
-`C:\omi\openclaw` es la base funcional.
+`C:\Users\Omar\Projects\openclaw` es la base funcional.
 
 `C:\omi\kleinanzeigen-watcher` es el proyecto.
 
@@ -357,7 +357,7 @@ La instalación base se considera correcta si se cumple todo esto:
 - [ ] `openclaw gateway status` funciona
 - [ ] el Gateway aparece como `Scheduled Task (registered)`
 - [ ] `RPC probe: ok`
-- [ ] `C:\omi\openclaw` queda reservado como base funcional
+- [ ] `C:\Users\Omar\Projects\openclaw` queda reservado como base funcional
 - [ ] `C:\omi\kleinanzeigen-watcher` queda separado como proyecto
 
 ## Estado real de esta instalación
@@ -423,7 +423,7 @@ El orden correcto es este:
 2. Verificar PowerShell.
 3. Instalar OpenClaw con `install.ps1`.
 4. Ejecutar `openclaw onboard --install-daemon`.
-5. Usar `C:\omi\openclaw` como base funcional.
+5. Usar `C:\Users\Omar\Projects\openclaw` como base funcional.
 6. Reservar `C:\omi\kleinanzeigen-watcher` para instrucciones del proyecto.
 7. Verificar con `openclaw doctor`.
 8. Verificar con `openclaw gateway status`.

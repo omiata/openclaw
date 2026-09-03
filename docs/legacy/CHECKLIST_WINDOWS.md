@@ -19,7 +19,7 @@ C:\omi\
 
 ## Regla de arquitectura
 
-- [ ] `C:\omi\openclaw` será la base funcional de OpenClaw
+- [ ] `C:\Users\Omar\Projects\openclaw` será la base funcional de OpenClaw
 - [ ] `C:\omi\kleinanzeigen-watcher` será solo el proyecto y sus instrucciones
 
 ## Fase 1. Preparación
@@ -29,7 +29,7 @@ C:\omi\
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\omi | Out-Null
-New-Item -ItemType Directory -Force -Path C:\omi\openclaw | Out-Null
+New-Item -ItemType Directory -Force -Path C:\Users\Omar\Projects\openclaw | Out-Null
 New-Item -ItemType Directory -Force -Path C:\omi\openclaw-setup | Out-Null
 New-Item -ItemType Directory -Force -Path C:\omi\kleinanzeigen-watcher | Out-Null
 ```
@@ -114,7 +114,7 @@ openclaw gateway status
 
 ## Fase 5. Workspace base
 
-- [ ] Reservar `C:\omi\openclaw` como workspace base
+- [ ] Reservar `C:\Users\Omar\Projects\openclaw` como workspace base
 - [ ] Usar esa carpeta para OpenClaw a nivel general
 - [ ] Dejar skills y extras para más adelante si hacen falta
 - [ ] No usar `C:\omi\kleinanzeigen-watcher` para eso
@@ -147,7 +147,7 @@ openclaw gateway status
 - [ ] `openclaw gateway status` funciona
 - [ ] el Gateway aparece como `Scheduled Task (registered)`
 - [ ] `RPC probe: ok`
-- [ ] `C:\omi\openclaw` queda como base funcional
+- [ ] `C:\Users\Omar\Projects\openclaw` queda como base funcional
 - [ ] `C:\omi\kleinanzeigen-watcher` queda como proyecto aparte
 
 ## Estado final de este primer paso
@@ -170,5 +170,5 @@ openclaw gateway status
 2. Verificar PowerShell.
 3. Instalar OpenClaw.
 4. Ejecutar onboarding.
-5. Reservar `C:\omi\openclaw` como base funcional.
+5. Reservar `C:\Users\Omar\Projects\openclaw` como base funcional.
 6. Ejecutar comprobaciones finales.

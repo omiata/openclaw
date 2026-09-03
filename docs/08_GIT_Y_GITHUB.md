@@ -9,7 +9,7 @@ Este documento define como versionar el workspace real con Git y GitHub.
 El repo principal debe ser:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 No debe ser:
@@ -28,7 +28,7 @@ Porque en tu caso:
 
 ## Que entra en Git
 
-Dentro de `C:\omi\openclaw`:
+Dentro de `C:\Users\Omar\Projects\openclaw`:
 
 - [ ] `docs\`
 - [ ] `skills\` del workspace
@@ -58,7 +58,7 @@ Motivos:
 ### Paso 1. Trabajar en el repo real
 
 ```powershell
-Set-Location C:\omi\openclaw
+Set-Location C:\Users\Omar\Projects\openclaw
 ```
 
 ### Paso 2. Configurar identidad de Git
@@ -128,7 +128,7 @@ Lo normal en Windows es:
 Un solo repo principal:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 Un solo remoto principal:

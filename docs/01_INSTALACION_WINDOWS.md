@@ -73,7 +73,7 @@ No hace falta para usar OpenClaw en esta fase.
 De ahora en adelante, el workspace principal y repo Git seran:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 ## Documentos relacionados

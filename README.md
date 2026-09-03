@@ -5,7 +5,7 @@ Repositorio principal de trabajo para OpenClaw en Windows.
 Arquitectura prevista:
 
 ```text
-C:\omi\openclaw\
+C:\Users\Omar\Projects\openclaw\
 ├── docs\
 ├── skills\
 ├── prompts\

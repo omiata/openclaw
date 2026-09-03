@@ -14,9 +14,9 @@ Esta arquitectura esta pensada para:
 
 ```text
 C:\Users\Omar\.openclaw\                          <- configuracion global real de OpenClaw
-C:\omi\openclaw\                                  <- repo Git principal y workspace unico
-C:\omi\openclaw\docs\                             <- documentacion y bitacora
-C:\omi\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro
+C:\Users\Omar\Projects\openclaw\                                  <- repo Git principal y workspace unico
+C:\Users\Omar\Projects\openclaw\docs\                             <- documentacion y bitacora
+C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher\   <- proyecto futuro
 ```
 
 ## Que va en cada sitio
@@ -33,7 +33,7 @@ Ejemplos:
 - [ ] sesiones
 - [ ] skills compartidas globales si algun dia hacen falta
 
-### `C:\omi\openclaw`
+### `C:\Users\Omar\Projects\openclaw`
 
 Este sera el repo Git principal y el workspace principal.
 
@@ -47,7 +47,7 @@ Ejemplos:
 - [ ] `notes\`
 - [ ] `projects\`
 
-### `C:\omi\openclaw\docs`
+### `C:\Users\Omar\Projects\openclaw\docs`
 
 Aqui va toda la documentacion.
 
@@ -58,7 +58,7 @@ Ejemplos:
 - [ ] decisiones
 - [ ] bitacora
 
-### `C:\omi\openclaw\projects\kleinanzeigen-watcher`
+### `C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher`
 
 Aqui ira solo el proyecto futuro.
 
@@ -84,7 +84,7 @@ C:\Users\Omar\.openclaw
 Va en:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 ### Si algo es documentacion
@@ -92,7 +92,7 @@ C:\omi\openclaw
 Va en:
 
 ```text
-C:\omi\openclaw\docs
+C:\Users\Omar\Projects\openclaw\docs
 ```
 
 ### Si algo es solo del watcher
@@ -100,7 +100,7 @@ C:\omi\openclaw\docs
 Va en:
 
 ```text
-C:\omi\openclaw\projects\kleinanzeigen-watcher
+C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher
 ```
 
 ## Lo que no vamos a hacer
@@ -116,13 +116,13 @@ C:\omi\openclaw\projects\kleinanzeigen-watcher
 Cuando trabajes con OpenClaw como base general, usa:
 
 ```powershell
-Set-Location C:\omi\openclaw
+Set-Location C:\Users\Omar\Projects\openclaw
 ```
 
 Cuando llegue el proyecto de Kleinanzeigen, usa:
 
 ```powershell
-Set-Location C:\omi\openclaw\projects\kleinanzeigen-watcher
+Set-Location C:\Users\Omar\Projects\openclaw\projects\kleinanzeigen-watcher
 ```
 
 ## Nota importante sobre Git
@@ -130,7 +130,7 @@ Set-Location C:\omi\openclaw\projects\kleinanzeigen-watcher
 El repo principal sera:
 
 ```text
-C:\omi\openclaw
+C:\Users\Omar\Projects\openclaw
 ```
 
 No versionaremos:
