@@ -31,3 +31,18 @@ When debugging:
 - Automatically commit changes when a **full implementation block** is finished and successfully passes all its tests.
 - Committing per-phase is ONLY allowed if the implementation plan is not grouped into blocks.
 - **Never push** to the remote repository unless explicitly requested by the user.
+
+## Autonomous Code Modification & Documentation (Sync Inbox Policy)
+
+- When operating autonomously (e.g., via Telegram or TUI) to improve functionality or fix bugs, you are **STRICTLY PROHIBITED** from updating, modifying, or creating any structural documentation files (e.g., `_fases.md`, `_reglas.md`, `_changelog.md`, `AGENTIC_PROMPTING.md`, or any proposal/reference `.md` file).
+- Your **ONLY** allowed method of logging your changes is to **APPEND** (never overwrite) a brief technical summary to an inbox file.
+- **Inbox Routing Rules:**
+  - If the change involves a specific skill (e.g., `bitacora`), append the detailed summary to `skills/<skill_name>/ref/sync_inbox.md`. THEN, append a short reference in the root `sync_inbox.md` indicating where the details are (e.g., "- 2026-04-12 | bitacora | Se actualizó la lógica, detalles en skills/bitacora/...").
+  - If the change is general OpenClaw core code, append the summary ONLY to the root `sync_inbox.md`.
+- **Format:** `- FECHA [YYYY-MM-DD HH:MM] | ARCHIVOS TOCADOS | RESUMEN DEL CAMBIO LOGICO`.
+- You must not attempt to consolidate documentation yourself. The user will perform a formal code review and promote the notes from the inboxes to the master documentation manually.
+- **Consolidation Rules (When User Requests It):**
+  - Read BOTH the root `sync_inbox.md` and any referenced skill `sync_inbox` files.
+  - Core/Framework changes go to the root `CHANGELOG.md`.
+  - Skill-specific changes MUST ONLY go directly to the specific skill's changelog (`skills/<skill_name>/ref/<skill_name>_changelog.md`). Never mix skill details into the root `CHANGELOG.md`.
+  - Clear both the root and skill-specific inboxes once their contents are fully promoted.

@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-29T08:46:25.753Z",
+  "entries": {
+    "memory:memory/2026-04-08.md:20:40": {
+      "key": "memory:memory/2026-04-08.md:20:40",
+      "path": "memory/2026-04-08.md",
+      "startLine": 20,
+      "endLine": 40,
+      "source": "memory",
+      "snippet": "- `dispatch-BvwlsDx2.js` — main dispatch, calls `maybeApplyTtsToReplyPayload(...)` at lines ~413, 596, 650, 704 - `dispatch-acp-Cu9dm2kp.js` — ACP dispatch with own `deliver()` at line ~568, uses `maybeApplyAcpTts(...)` (different function!) - `extensions/speech-core/runtime-api.js` — defines `maybeApplyTtsToPayload(...)` - `provider-error-utils-Z09hDOl0.js` — defines `parseTtsDirectives(...)` - `outbound-D8YI0oq5.js` — `sendVoice(...)` / `sendVoiceFromLocal(...)` for Telegram - `bot-DMS2hpfD.js` — bot entry point, uses `dispatchReplyWithBufferedBlockDispatcher` - `provider-dispatcher-COjV0JaB.js` — thin wrapper, calls `dispatchInboundMessageWithBufferedDispatcher` ### Hypothesis (still bei",
+      "recallCount": 5,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.837951041469835,
+      "maxScore": 0.7126813070441474,
+      "firstRecalledAt": "2026-04-09T21:13:05.115Z",
+      "lastRecalledAt": "2026-04-29T08:46:25.753Z",
+      "queryHashes": [
+        "703b60509aee",
+        "97fc20d216e4",
+        "97e5acf8ff67",
+        "d9ff03c35f42",
+        "6e5fd6808215"
+      ],
+      "recallDays": [
+        "2026-04-09",
+        "2026-04-12",
+        "2026-04-29"
+      ],
+      "conceptTags": [
+        "dispatch-bvwlsdx2.js",
+        "dispatch-acp-cu9dm2kp.js",
+        "provider-error-utils-z09hdol0.js",
+        "outbound-d8yi0oq5.js",
+        "bot-dms2hpfd.js",
+        "provider-dispatcher-cojv0jab.js",
+        "dispatch",
+        "bvwlsdx2"
+      ]
+    },
+    "memory:memory/2026-04-08.md:36:45": {
+      "key": "memory:memory/2026-04-08.md:36:45",
+      "path": "memory/2026-04-08.md",
+      "startLine": 36,
+      "endLine": 45,
+      "source": "memory",
+      "snippet": "- Where the `policy.enabled = false` condition is being hit (since `parseTtsDirectives` returns raw text when disabled) - Why `journalctl` never shows `sendVoice` — indicating TTS media is never generated in the real path ### Next Steps 1. Inspect `maybeApplyAcpTts(...)` implementation — does it process `[[tts]]` or pass through? 2. Trace which dispatch route Telegram actually uses at runtime 3. Find where `policy.enabled` becomes `false` in the real execution path 4. Apply minimal patch 5. Verify with directed test in Telegram",
+      "recallCount": 3,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 1.8736894031122988,
+      "maxScore": 0.731074354315775,
+      "firstRecalledAt": "2026-04-12T10:48:52.426Z",
+      "lastRecalledAt": "2026-04-12T19:45:50.557Z",
+      "queryHashes": [
+        "97fc20d216e4",
+        "97e5acf8ff67",
+        "d9ff03c35f42"
+      ],
+      "recallDays": [
+        "2026-04-12"
+      ],
+      "conceptTags": [
+        "policy.enabled",
+        "where",
+        "the",
+        "false",
+        "condition",
+        "hit",
+        "parsettsdirectives",
+        "returns"
+      ]
+    },
+    "memory:memory/2026-04-08.md:1:23": {
+      "key": "memory:memory/2026-04-08.md:1:23",
+      "path": "memory/2026-04-08.md",
+      "startLine": 1,
+      "endLine": 23,
+      "source": "memory",
+      "snippet": "# 2026-04-08 Debugging Session ## Telegram TTS [[tts]] Bug Investigation ### Problem - `/tts audio` command works correctly (sends voice note in Telegram) - `[[tts]]` tag in normal assistant replies appears as literal text in Telegram instead of triggering TTS audio ### Confirmed Facts - TTS base generation works: `/tts audio` → `textToSpeech(...)` → voice message delivered - `maybeApplyTtsToPayload(...)` works in isolated test: returns cleaned text + `mediaUrl` + `audioAsVoice: true` - `parseTtsDirectives(text, policy, options)` returns text unchanged if `!policy.enabled` — matches the symptom - Session Telegram: `agent:main:telegram:direct:187220721`, `ttsAuto = undefined` - Config: `me",
+      "recallCount": 4,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 2.5417748940625753,
+      "maxScore": 0.7713078433731255,
+      "firstRecalledAt": "2026-04-12T10:48:52.426Z",
+      "lastRecalledAt": "2026-04-29T08:46:25.753Z",
+      "queryHashes": [
+        "97fc20d216e4",
+        "97e5acf8ff67",
+        "185a11113fb1",
+        "6e5fd6808215"
+      ],
+      "recallDays": [
+        "2026-04-12",
+        "2026-04-29"
+      ],
+      "conceptTags": [
+        "policy.enabled",
+        "debugging",
+        "telegram",
+        "tts",
+        "bug",
+        "investigation",
+        "problem",
+        "audio"
+      ]
+    },
+    "memory:memory/2026-04-12.md:1:8": {
+      "key": "memory:memory/2026-04-12.md:1:8",
+      "path": "memory/2026-04-12.md",
+      "startLine": 1,
+      "endLine": 8,
+      "source": "memory",
+      "snippet": "- El usuario quiere que, cuando una categoría sea de tipo lista, se muestre siempre en formato lista. - Si la lista mezcla películas y series, prefiere que se separen en secciones distintas. - El usuario quiere que, cuando una categoría sea de tipo lista, se muestre siempre en formato lista. - Si la lista mezcla películas y series, prefiere que se separen en secciones distintas. - En el trabajo del carrusel de Telegram para la skill bitácora, se confirmó que el problema de que “no salga” no era el runtime parcheado sino que la skill no estaba invocando `read_entries.py --telegram-carousel`; se actualizó `skills/bitacora/SKILL.md` para que en Telegram, al listar varias referencias enlazables,",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.7387199194156311,
+      "maxScore": 0.7387199194156311,
+      "firstRecalledAt": "2026-04-14T15:29:13.513Z",
+      "lastRecalledAt": "2026-04-14T15:29:13.513Z",
+      "queryHashes": [
+        "be59c1cde770"
+      ],
+      "recallDays": [
+        "2026-04-14"
+      ],
+      "conceptTags": [
+        "read-entries.py",
+        "telegram-carousel",
+        "skills/bitacora/skill.md",
+        "usuario",
+        "quiere",
+        "cuando",
+        "categoría",
+        "sea"
+      ]
+    }
+  }
+}

@@ -1,2 +1,3 @@
 - 2026-04-29 10:57 | skills/bitacora/ref/sync_inbox.md | Nota para implementar reenvío fiable de PDFs adjuntos guardados en bitácora; detalles en skills/bitacora/ref/sync_inbox.md.
 - 2026-04-29 11:40 | bitacora | Se actualizó la lógica de serve-document para aislar PDFs salientes, detalles en skills/bitacora/ref/sync_inbox.md.
+- 2026-06-04 11:28 | skills/bitacora/ref/sync_inbox.md | bitacora: exportacion real de camper/packliste para Microsoft To Do mediante JSON + importador Graph; detalles en skills/bitacora/ref/sync_inbox.md.

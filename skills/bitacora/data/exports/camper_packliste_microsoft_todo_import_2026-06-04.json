@@ -1,0 +1,103 @@
+{
+  "listTitle": "Camper Packliste",
+  "source": "bitacora camper/packliste",
+  "generatedAt": "2026-06-04T11:28:00+02:00",
+  "tasks": [
+    {
+      "title": "Documentacion personal y vehiculo",
+      "status": "notStarted"
+    },
+    {
+      "title": "Llaves de repuesto",
+      "status": "notStarted"
+    },
+    {
+      "title": "Ropa por capas",
+      "status": "notStarted"
+    },
+    {
+      "title": "Neceser y botiquin",
+      "status": "notStarted"
+    },
+    {
+      "title": "Comida base y agua",
+      "status": "notStarted"
+    },
+    {
+      "title": "Cocina: gas/placa, mechero, cafe, utensilios",
+      "status": "notStarted"
+    },
+    {
+      "title": "Cables y cargadores",
+      "status": "notStarted"
+    },
+    {
+      "title": "cables usb c",
+      "status": "notStarted"
+    },
+    {
+      "title": "cables usb multi",
+      "status": "notStarted"
+    },
+    {
+      "title": "powerbank 1",
+      "status": "notStarted"
+    },
+    {
+      "title": "powerbank 2",
+      "status": "notStarted"
+    },
+    {
+      "title": "Herramientas basicas",
+      "status": "notStarted"
+    },
+    {
+      "title": "Sillas/mesa exterior",
+      "status": "notStarted"
+    },
+    {
+      "title": "Ropa de cama o sacos",
+      "status": "notStarted"
+    },
+    {
+      "title": "Toallas",
+      "status": "notStarted"
+    },
+    {
+      "title": "Bolsas basura y limpieza",
+      "status": "notStarted"
+    },
+    {
+      "title": "Presion de neumaticos",
+      "status": "notStarted"
+    },
+    {
+      "title": "Nivel de aceite y liquidos",
+      "status": "notStarted"
+    },
+    {
+      "title": "Luces",
+      "status": "notStarted"
+    },
+    {
+      "title": "Bateria / powerbank / sistema electrico",
+      "status": "notStarted"
+    },
+    {
+      "title": "Agua limpia y vaciado",
+      "status": "notStarted"
+    },
+    {
+      "title": "Nevera o conservacion comida",
+      "status": "notStarted"
+    },
+    {
+      "title": "Seguro, ITV/TUV y asistencia en carretera",
+      "status": "notStarted"
+    },
+    {
+      "title": "Revisar sugerencias por clima/ruta/duracion",
+      "status": "notStarted"
+    }
+  ]
+}

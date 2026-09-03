@@ -23,6 +23,14 @@ Usar esta skill para guardar y mantener recursos por proyecto en `skills/bitacor
 - En salida humana, ocultar IDs, rutas físicas, fechas ISO y tono de CLI.
 - En modo técnico, mostrar detalles internos útiles como IDs, fechas ISO, rutas y campos exactos.
 
+### Telegram
+
+- Si el canal de salida real es Telegram y el usuario pide listar o mostrar varias referencias con enlace, especialmente vídeos o resultados navegables, preferir `scripts/read_entries.py --telegram-carousel`.
+- En ese caso pasar también `--carousel-cache-key` con una clave corta, estable para ese turno y sin `:`.
+- Cuando uses `--telegram-carousel`, devuelve al usuario el JSON crudo que salga por stdout, sin envolverlo, resumirlo, ni añadir texto antes o después.
+- No sustituyas el carrusel por listas manuales, miniaturas con `MEDIA:`, ni enlaces pegados a mano si el caso encaja con el carrusel.
+- Si el canal no es Telegram, o no hay varias referencias enlazables, vuelve a la salida humana normal.
+
 ## Formato de datos
 
 - Mantener un archivo por proyecto.
@@ -35,11 +43,11 @@ Usar esta skill para guardar y mantener recursos por proyecto en `skills/bitacor
 ## Scripts disponibles
 
 - `scripts/save_entry.py` para guardar, actualizar, migrar, fusionar duplicados, cambiar estado y editar entradas.
-- `scripts/read_entries.py` para listar, filtrar, buscar, ver recientes, ver pendientes de enriquecer, generar recordatorios y consultar modo técnico.
+- `scripts/read_entries.py` para listar, filtrar, buscar, ver recientes, ver pendientes de enriquecer, generar recordatorios, consultar modo técnico y emitir carruseles de Telegram con `--telegram-carousel`.
 
 ## Tests disponibles
 
-- `scripts/test_phase1.py` a `scripts/test_phase22.py`
+- `scripts/test_phase1.py` a `scripts/test_phase23.py`
 
 ## Ejemplos de uso
 
@@ -58,4 +66,5 @@ python3 skills/bitacora/scripts/save_entry.py \
 python3 skills/bitacora/scripts/read_entries.py --project camper
 python3 skills/bitacora/scripts/read_entries.py --project camper --pending-enrichment
 python3 skills/bitacora/scripts/read_entries.py --project camper --technical --entry-id entry-1712613864123
+python3 skills/bitacora/scripts/read_entries.py --project camper --category cama --telegram-carousel --carousel-cache-key camcama1
 ```

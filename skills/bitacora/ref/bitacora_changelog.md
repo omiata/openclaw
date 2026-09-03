@@ -88,3 +88,9 @@ Esta version sigue en fase de revision documental. Los archivos canonicos actual
 - acotada la limpieza final en `save_entry.py` para evitar solo la redundancia inútil de URL repetida entre `fuente` y nota personal, sin romper notas útiles ni regresiones antiguas
 - añadidos `test_phase21.py` y `test_phase22.py` para materializar los tests del bloque sobre capa conversacional fuerte, modo técnico y limpieza final
 - ejecutada regresión completa satisfactoria sobre `test_phase1.py` a `test_phase22.py`
+
+### 2026-04-13 12:22:00 CEST+0200 - Integración Telegram Carousel
+- se desvió la salida `telegram_inline_carousel` de `stdout` a `stderr` con un helper único `emit_telegram_carousel_output(...)`, para transitar el JSON de interfaces interactivas directamente sin romper la salida estándar en `read_entries.py`.
+
+### 2026-04-12 13:09:00 CEST+0200 - Ruteo interactivo
+- se añadió instrucción operativa en `SKILL.md` para que las listas de referencias enlazables en Telegram usen obligatoriamente `read_entries.py --telegram-carousel` retornando el JSON en formato carrusel en lugar de listas manuales.
